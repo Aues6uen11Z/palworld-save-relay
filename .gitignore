@@ -10,3 +10,6 @@ frontend/node_modules/
 frontend/dist/
 *.exe
 backups/
+
+# real save fixtures (personal data; fetch via testdata/fetch.ps1)
+internal/sav/testdata/*.sav
