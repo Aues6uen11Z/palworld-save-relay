@@ -11,6 +11,7 @@ import (
 var assets embed.FS
 
 func main() {
+	hideConsole()
 	app := application.New(application.Options{
 		Name:        "Pal Save Relay",
 		Description: "Palworld co-op save relay",

@@ -7,9 +7,21 @@ import type { LockStatus } from "../bindings/palworld-save-relay/internal/storag
 
 type View = "worlds" | "cloud" | "backups" | "settings";
 
+function defaultConfig(): Config {
+  return {
+    qiniu: { access_key: "", secret_key: "", bucket: "", region: "", domain: "" },
+    uploader: "",
+    save_root: "",
+    world_aliases: {},
+    hidden_worlds: {},
+    backup_keep: 5,
+    lock_ttl: 0,
+  } as unknown as Config;
+}
+
 export default function AppView() {
   const [view, setView] = useState<View>("worlds");
-  const [cfg, setCfg] = useState<Config | null>(null);
+  const [cfg, setCfg] = useState<Config>(defaultConfig());
   const [worlds, setWorlds] = useState<World[]>([]);
   const [selWorld, setSelWorld] = useState<World | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -34,8 +46,12 @@ export default function AppView() {
 
   useEffect(() => {
     (async () => {
-      const c = await App.GetConfig();
-      setCfg(c);
+      try {
+        const c = await App.GetConfig();
+        if (c) setCfg(c);
+      } catch (e: any) {
+        flash("err", "加载配置失败: " + (e?.message || e));
+      }
       await refreshWorlds();
     })();
   }, [refreshWorlds]);
@@ -114,7 +130,7 @@ export default function AppView() {
           )}
           {view === "cloud" && <CloudView world={selWorld} busy={busy} flash={flash} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} />}
-          {view === "settings" && cfg && (
+          {view === "settings" && (
             <SettingsView cfg={cfg} onSaved={(c) => { setCfg(c); flash("ok", "配置已保存"); }} />
           )}
         </div>
@@ -334,5 +350,6 @@ function SettingsView({ cfg, onSaved }: { cfg: Config; onSaved: (c: Config) => v
     </div>
   );
 }
+
 
 
