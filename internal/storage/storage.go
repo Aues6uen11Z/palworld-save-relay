@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"palworld-save-relay/internal/logger"
 )
 
 // Object is a cloud object listing entry.
@@ -70,6 +72,7 @@ func ListVersions(ctx context.Context, s Storage, worldGUID string) ([]Object, e
 	prefix := "saves/" + worldGUID + "/"
 	objs, err := s.List(ctx, prefix)
 	if err != nil {
+		logger.Errorf("ListVersions: world=%s list failed: %v", worldGUID, err)
 		return nil, err
 	}
 	var out []Object
@@ -101,7 +104,9 @@ func LatestVersion(ctx context.Context, s Storage, worldGUID string) (string, er
 // UploadVersion uploads a save zip as a new version under worldGUID.
 func UploadVersion(ctx context.Context, s Storage, worldGUID, uploader string, r io.Reader, size int64) (string, error) {
 	key := VersionKey(worldGUID, uploader, time.Now())
+	logger.Infof("UploadVersion: world=%s uploader=%s key=%s size=%d", worldGUID, uploader, key, size)
 	if err := s.Upload(ctx, key, r, size); err != nil {
+		logger.Errorf("UploadVersion: world=%s key=%s upload failed: %v", worldGUID, key, err)
 		return "", err
 	}
 	return key, nil

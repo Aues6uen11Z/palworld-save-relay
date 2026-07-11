@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"palworld-save-relay/internal/logger"
 )
 
 // BackupDir returns the app backup root (%APPDATA%/PalSaveRelay/backups).
@@ -39,12 +41,15 @@ func BackupWorld(worldDir string) (string, error) {
 	}
 	data, err := PackWorld(worldDir)
 	if err != nil {
+		logger.Errorf("BackupWorld: world=%s pack failed: %v", guid, err)
 		return "", err
 	}
 	name := time.Now().Format("2006-01-02_150405") + ".zip"
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
+		logger.Errorf("BackupWorld: world=%s write failed: %v", guid, err)
 		return "", err
 	}
+	logger.Infof("BackupWorld: world=%s -> %s (%d bytes)", guid, path, len(data))
 	return path, nil
 }

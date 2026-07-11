@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
+import { Dialogs } from "@wailsio/runtime";
 import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
-import type { LockStatus } from "../bindings/palworld-save-relay/internal/storage/models";
 
 type View = "worlds" | "cloud" | "backups" | "settings";
 
@@ -25,9 +25,10 @@ export default function AppView() {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [selWorld, setSelWorld] = useState<World | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [lock, setLock] = useState<LockStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [saveRoot, setSaveRoot] = useState("");
+  const [detectErr, setDetectErr] = useState("");
 
   const flash = (kind: "ok" | "err", msg: string) => {
     setToast({ kind, msg });
@@ -35,13 +36,16 @@ export default function AppView() {
   };
 
   const refreshWorlds = useCallback(async () => {
+    setDetectErr("");
     try {
       const ws = await App.DetectWorlds();
       setWorlds(ws || []);
       if (ws && ws.length && !selWorld) setSelWorld(ws[0]);
     } catch (e: any) {
+      setDetectErr(String(e?.message || e));
       flash("err", "检测世界失败: " + (e?.message || e));
     }
+    try { setSaveRoot(await App.ResolvedSaveRoot()); } catch {}
   }, [selWorld]);
 
   useEffect(() => {
@@ -60,7 +64,6 @@ export default function AppView() {
     setSelWorld(w);
     try {
       setPlayers((await App.ListPlayers(w.Path)) || []);
-      setLock(await App.LockStatus(w.GUID));
     } catch (e: any) {
       flash("err", String(e?.message || e));
     }
@@ -97,16 +100,13 @@ export default function AppView() {
               <p className="text-xs text-gray-500">{selWorld.alias || selWorld.GUID}</p>
             )}
           </div>
-          {selWorld && lock && (view === "worlds" || view === "cloud") && (
-            <LockBadge lock={lock} />
-          )}
         </header>
 
         <div className="p-6 max-w-4xl">
           {needsConfig && view !== "settings" && (
             <div className="card p-4 mb-4 border-amber-200 bg-amber-50">
               <p className="text-sm text-amber-800">
-                还没配置七牛云，请先到「设置」填写 AccessKey / SecretKey / Bucket / 区域。
+                还没配置云服务。可到「设置」配置云同步；或直接用下方的「导出 / 导入存档」手动传输。
               </p>
             </div>
           )}
@@ -118,20 +118,44 @@ export default function AppView() {
               onSelect={selectWorld}
               players={players}
               busy={busy}
-              onUpload={() => run("上传交出", async () => {
-                await App.PrepareUpload(selWorld!.Path);
-                await App.UploadWorld(selWorld!.Path);
-              })}
+              saveRoot={saveRoot}
+              detectErr={detectErr}
+              onUpload={() => run("上传存档", () => App.UploadWorld(selWorld!.Path))}
               onDownload={() => run("下载最新", () => App.DownloadLatest(selWorld!.Path))}
               onActivate={() => run("接手当房主", () => App.ActivateHost(selWorld!.Path))}
-              onAcquire={() => run("占锁", () => App.AcquireLock(selWorld!.GUID, cfg?.uploader || "player"))}
-              onRelease={() => run("释放锁", () => App.ReleaseLock(selWorld!.GUID))}
+              onExport={async () => {
+                if (!selWorld) return;
+                try {
+                  const out = await Dialogs.SaveFile({
+                    Title: "导出存档",
+                    Filename: `${selWorld.GUID}.palrelay.zip`,
+                    Filters: [{ DisplayName: "存档包", Pattern: "*.palrelay.zip" }],
+                  });
+                  if (!out) return;
+                  await run("导出存档", () => App.ExportWorld(selWorld!.Path, out));
+                } catch (e: any) { flash("err", "导出失败: " + (e?.message || e)); }
+              }}
+              onImport={async () => {
+                if (!selWorld) return;
+                try {
+                  const res = await Dialogs.OpenFile({
+                    Title: "导入存档",
+                    Filters: [{ DisplayName: "存档包", Pattern: "*.palrelay.zip;*.zip" }],
+                  });
+                  const inPath = Array.isArray(res) ? res[0] : res;
+                  if (!inPath) return;
+                  await run("导入存档", async () => {
+                    await App.ImportWorld(inPath, selWorld!.Path);
+                    await App.ActivateHost(selWorld!.Path);
+                  });
+                } catch (e: any) { flash("err", "导入失败: " + (e?.message || e)); }
+              }}
             />
           )}
           {view === "cloud" && <CloudView world={selWorld} busy={busy} flash={flash} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} />}
           {view === "settings" && (
-            <SettingsView cfg={cfg} onSaved={(c) => { setCfg(c); flash("ok", "配置已保存"); }} />
+            <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", "配置已保存"); refreshWorlds(); }} />
           )}
         </div>
       </main>
@@ -146,12 +170,12 @@ export default function AppView() {
 }
 
 function titleFor(v: View) {
-  return { worlds: "世界与接力", cloud: "云同步", backups: "备份管理", settings: "设置" }[v];
+  return { worlds: "存档转换", cloud: "云同步", backups: "备份管理", settings: "设置" }[v];
 }
 
 function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) {
   const items: [View, string][] = [
-    ["worlds", "世界与接力"],
+    ["worlds", "存档转换"],
     ["cloud", "云同步"],
     ["backups", "备份"],
     ["settings", "设置"],
@@ -159,7 +183,7 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
   return (
     <aside className="w-52 bg-gray-900 text-gray-300 flex flex-col">
       <div className="px-5 py-5 text-white font-bold flex items-center gap-2">
-        <span className="text-xl">🪄</span> Pal Save Relay
+        <span className="text-xl">🪄</span> Palworld 存档转换
       </div>
       <nav className="flex-1 px-2 space-y-1">
         {items.map(([v, label]) => (
@@ -172,34 +196,24 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
           </button>
         ))}
       </nav>
-      <p className="px-5 py-4 text-xs text-gray-500">存档接力 · 开源</p>
     </aside>
-  );
-}
-
-function LockBadge({ lock }: { lock: LockStatus }) {
-  if (!lock.Held)
-    return <span className="pill bg-emerald-100 text-emerald-700">空闲</span>;
-  return (
-    <span className={`pill ${lock.Stale ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
-      {lock.Stale ? "锁过期" : "有人游玩"} · {lock.Lock?.player}
-    </span>
   );
 }
 
 function WorldsView(props: {
   worlds: World[]; sel: World | null; onSelect: (w: World) => void; players: Player[];
   busy: boolean;
+  saveRoot: string; detectErr: string;
   onUpload: () => void; onDownload: () => void; onActivate: () => void;
-  onAcquire: () => void; onRelease: () => void;
+  onExport: () => void; onImport: () => void;
 }) {
-  const { worlds, sel, onSelect, players, busy } = props;
+  const { worlds, sel, onSelect, players, busy, saveRoot, detectErr } = props;
   return (
     <div className="space-y-5">
       <div className="card p-4">
         <h2 className="font-semibold mb-3">选择世界</h2>
         {worlds.length === 0 ? (
-          <p className="text-sm text-gray-500">未检测到 Palworld 存档。可在「设置」里手动指定存档目录。</p>
+          <div className="text-sm text-gray-500"><p>未检测到 Palworld 存档。</p><p className="mt-1">存档目录：<span className="font-mono text-gray-700 break-all">{saveRoot || "(未获取)"}</span></p>{detectErr && <p className="mt-1 text-red-500">错误：{detectErr}</p>}<p className="mt-1">路径不对？可在「设置」里手动指定存档目录。</p></div>
         ) : (
           <div className="grid gap-2">
             {worlds.map((w) => (
@@ -238,14 +252,21 @@ function WorldsView(props: {
           </div>
 
           <div className="card p-4">
-            <h2 className="font-semibold mb-1">接力操作</h2>
-            <p className="text-xs text-gray-500 mb-3">房主交出：先「上传交出」再释放锁。接手者：先「下载最新」再「接手当房主」并占锁。</p>
+            <h2 className="font-semibold mb-1">换房主</h2>
+            <p className="text-xs text-gray-500 mb-3">当前房主点「上传存档」把存档发到云端（不影响本机，你仍是房主）。接手方先「下载最新」再「换我当房主」即可成为新房主。</p>
             <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" disabled={busy} onClick={props.onUpload}>⬆ 上传交出</button>
+              <button className="btn-primary" disabled={busy} onClick={props.onUpload}>⬆ 上传存档</button>
               <button className="btn-ghost" disabled={busy} onClick={props.onDownload}>⬇ 下载最新</button>
-              <button className="btn-primary" disabled={busy} onClick={props.onActivate}>🎯 接手当房主</button>
-              <button className="btn-ghost" disabled={busy} onClick={props.onAcquire}>🔒 占锁</button>
-              <button className="btn-ghost" disabled={busy} onClick={props.onRelease}>🔓 释放锁</button>
+              <button className="btn-primary" disabled={busy} onClick={props.onActivate}>🎯 换我当房主</button>
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <h2 className="font-semibold mb-1">手动传输</h2>
+            <p className="text-xs text-gray-500 mb-3">没配云服务也能用：导出存档为单文件发给对方（不影响本机，你仍是房主），对方导入后自动成为新房主。</p>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-ghost" disabled={busy} onClick={props.onExport}>📤 导出存档</button>
+              <button className="btn-ghost" disabled={busy} onClick={props.onImport}>📥 导入存档</button>
             </div>
           </div>
         </>
@@ -319,7 +340,7 @@ function BackupsView({ world, busy, flash }: { world: World | null; busy: boolea
   );
 }
 
-function SettingsView({ cfg, onSaved }: { cfg: Config; onSaved: (c: Config) => void }) {
+function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: string; onSaved: (c: Config) => void }) {
   const [q, setQ] = useState(cfg.qiniu || ({} as any));
   const [uploader, setUploader] = useState(cfg.uploader || "");
   const [root, setRoot] = useState(cfg.save_root || "");
@@ -344,12 +365,9 @@ function SettingsView({ cfg, onSaved }: { cfg: Config; onSaved: (c: Config) => v
       <div className="card p-4 space-y-3">
         <h2 className="font-semibold">通用</h2>
         <div><label className="label">上传者名（标识版本）</label><input className="input" value={uploader} onChange={(e) => setUploader(e.target.value)} /></div>
-        <div><label className="label">存档目录（留空自动检测）</label><input className="input" value={root} onChange={(e) => setRoot(e.target.value)} /></div>
+        <div><label className="label">存档目录（留空自动检测）</label><input className="input" value={root} onChange={(e) => setRoot(e.target.value)} />{!root && autoRoot && <p className="text-xs text-gray-400 mt-1 font-mono break-all">自动检测：{autoRoot}</p>}</div>
       </div>
       <button className="btn-primary" onClick={save}>保存配置</button>
     </div>
   );
 }
-
-
-

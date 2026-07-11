@@ -1,4 +1,4 @@
-// Package config manages the Pal Save Relay application config (Qiniu creds,
+// Package config manages the Palworld 存档转换 application config (Qiniu creds,
 // world aliases, hidden saves, relay preferences) stored as JSON in AppData.
 package config
 
@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"palworld-save-relay/internal/logger"
 )
 
 // Config is the persisted application configuration.
@@ -46,19 +48,24 @@ func Path() (string, error) {
 func Load() (*Config, error) {
 	p, err := Path()
 	if err != nil {
+		logger.Errorf("config.Load: path failed: %v", err)
 		return nil, err
 	}
 	data, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
+		logger.Infof("config.Load: no config file at %s, using defaults", p)
 		return Defaults(), nil
 	}
 	if err != nil {
+		logger.Errorf("config.Load: read %s failed: %v", p, err)
 		return nil, err
 	}
 	c := Defaults()
 	if err := json.Unmarshal(data, c); err != nil {
+		logger.Errorf("config.Load: parse %s failed: %v", p, err)
 		return nil, err
 	}
+	logger.Infof("config.Load: loaded %s (save_root=%q bucket=%q)", p, c.SaveRoot, c.Qiniu.Bucket)
 	return c, nil
 }
 
@@ -72,7 +79,12 @@ func Save(c *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o644)
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		logger.Errorf("config.Save: write %s failed: %v", p, err)
+		return err
+	}
+	logger.Infof("config.Save: wrote %s (%d bytes)", p, len(data))
+	return nil
 }
 
 // Defaults returns the default configuration.

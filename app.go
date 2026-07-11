@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"palworld-save-relay/internal/config"
+	"palworld-save-relay/internal/logger"
 	"palworld-save-relay/internal/palworld"
 	"palworld-save-relay/internal/storage"
 )
@@ -22,7 +23,10 @@ type App struct {
 func NewApp() *App {
 	cfg, err := config.Load()
 	if err != nil {
+		logger.Warnf("NewApp: config load failed, using defaults: %v", err)
 		cfg = config.Defaults()
+	} else {
+		logger.Infof("NewApp: config loaded (save_root=%q uploader=%q qiniu_bucket=%q)", cfg.SaveRoot, cfg.Uploader, cfg.Qiniu.Bucket)
 	}
 	return &App{cfg: cfg}
 }
@@ -36,10 +40,13 @@ func (a *App) GetConfig() (*config.Config, error) {
 
 // SaveConfig updates and persists the config.
 func (a *App) SaveConfig(c *config.Config) error {
+	logger.Infof("SaveConfig: save_root=%q uploader=%q qiniu_bucket=%q", c.SaveRoot, c.Uploader, c.Qiniu.Bucket)
 	if err := config.Save(c); err != nil {
+		logger.Errorf("SaveConfig: persist failed: %v", err)
 		return err
 	}
 	a.cfg = c
+	logger.Info("SaveConfig: persisted")
 	return nil
 }
 
@@ -52,20 +59,27 @@ type World struct {
 	Hidden bool   `json:"hidden"`
 }
 
+// ResolvedSaveRoot returns the save root the app uses (config override or auto).
+func (a *App) ResolvedSaveRoot() (string, error) {
+	if a.cfg.SaveRoot != "" {
+		return a.cfg.SaveRoot, nil
+	}
+	return palworld.SaveRoot()
+}
+
 // DetectWorlds lists local world saves under the configured (or auto) root.
 func (a *App) DetectWorlds() ([]World, error) {
-	root := a.cfg.SaveRoot
-	if root == "" {
-		r, err := palworld.SaveRoot()
-		if err != nil {
-			return nil, err
-		}
-		root = r
+	root, err := a.ResolvedSaveRoot()
+	if err != nil {
+		logger.Errorf("DetectWorlds: resolve save root failed: %v", err)
+		return nil, err
 	}
 	ws, err := palworld.ListWorlds(root)
 	if err != nil {
+		logger.Errorf("DetectWorlds: root=%s err=%v", root, err)
 		return nil, err
 	}
+	logger.Infof("DetectWorlds: root=%s worlds=%d", root, len(ws))
 	out := make([]World, 0, len(ws))
 	for _, w := range ws {
 		out = append(out, World{
@@ -79,6 +93,7 @@ func (a *App) DetectWorlds() ([]World, error) {
 
 // SetWorldMeta sets a world's alias and hidden flag (persisted).
 func (a *App) SetWorldMeta(guid, alias string, hidden bool) error {
+	logger.Infof("SetWorldMeta: guid=%s alias=%q hidden=%v", guid, alias, hidden)
 	if a.cfg.WorldAliases == nil {
 		a.cfg.WorldAliases = map[string]string{}
 	}
@@ -95,12 +110,22 @@ func (a *App) SetWorldMeta(guid, alias string, hidden bool) error {
 	} else {
 		delete(a.cfg.HiddenWorlds, guid)
 	}
-	return config.Save(a.cfg)
+	if err := config.Save(a.cfg); err != nil {
+		logger.Errorf("SetWorldMeta: persist failed: %v", err)
+		return err
+	}
+	return nil
 }
 
 // ListPlayers returns the players in a world (host flagged).
 func (a *App) ListPlayers(worldPath string) ([]palworld.Player, error) {
-	return palworld.ListPlayers(worldPath)
+	players, err := palworld.ListPlayers(worldPath)
+	if err != nil {
+		logger.Errorf("ListPlayers: world=%s err=%v", worldPath, err)
+		return nil, err
+	}
+	logger.Infof("ListPlayers: world=%s players=%d", filepath.Base(worldPath), len(players))
+	return players, nil
 }
 
 // LocalSteamID returns the local player's SteamID64 (from the save folder).
@@ -109,33 +134,38 @@ func (a *App) LocalSteamID() (uint64, error) {
 	if root == "" {
 		r, err := palworld.SaveRoot()
 		if err != nil {
+			logger.Errorf("LocalSteamID: resolve root failed: %v", err)
 			return 0, err
 		}
 		root = r
 	}
-	return palworld.LocalSteamID(root)
+	sid, err := palworld.LocalSteamID(root)
+	if err != nil {
+		logger.Errorf("LocalSteamID: root=%s err=%v", root, err)
+		return 0, err
+	}
+	logger.Infof("LocalSteamID: root=%s steamid=%d", root, sid)
+	return sid, nil
 }
 
 // ---------- host conversion ----------
 
-// PrepareUpload converts the host (0000...0001) to the local player's real UID,
-// producing the cloud intermediate. Call before uploading.
-func (a *App) PrepareUpload(worldPath string) error {
-	sid, err := a.LocalSteamID()
-	if err != nil {
-		return err
-	}
-	return palworld.ConvertHost(worldPath, palworld.HostUUID, palworld.SteamIDToPlayerUUID(sid))
-}
-
 // ActivateHost converts the local player's real UID to the host slot, making
 // this machine the host. Call after downloading the intermediate.
 func (a *App) ActivateHost(worldPath string) error {
+	guid := filepath.Base(worldPath)
 	sid, err := a.LocalSteamID()
 	if err != nil {
 		return err
 	}
-	return palworld.ConvertHost(worldPath, palworld.SteamIDToPlayerUUID(sid), palworld.HostUUID)
+	fromUID := palworld.SteamIDToPlayerUUID(sid)
+	logger.Infof("ActivateHost: world=%s steamid=%d -> %s (real->host)", guid, sid, fromUID)
+	if err := palworld.ConvertHost(worldPath, fromUID, palworld.HostUUID); err != nil {
+		logger.Errorf("ActivateHost: world=%s convert failed: %v", guid, err)
+		return err
+	}
+	logger.Infof("ActivateHost: world=%s done", guid)
+	return nil
 }
 
 // ---------- cloud ----------
@@ -145,10 +175,15 @@ func (a *App) newStorage() (storage.Storage, error) {
 	if q.AccessKey == "" || q.Bucket == "" {
 		return nil, fmt.Errorf("qiniu config incomplete")
 	}
-	return storage.NewQiniu(storage.QiniuConfig{
+	s, err := storage.NewQiniu(storage.QiniuConfig{
 		AccessKey: q.AccessKey, SecretKey: q.SecretKey,
 		Bucket: q.Bucket, Region: q.Region, Domain: q.Domain,
 	})
+	if err != nil {
+		logger.Errorf("newStorage: qiniu init failed (bucket=%s region=%s): %v", q.Bucket, q.Region, err)
+		return nil, err
+	}
+	return s, nil
 }
 
 func (a *App) lockManager() (*storage.LockManager, error) {
@@ -159,22 +194,36 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 	return &storage.LockManager{Store: s, TTL: a.cfg.LockTTL}, nil
 }
 
-// UploadWorld packs and uploads the current world as a new cloud version.
+// UploadWorld packs the world as the transfer intermediate (host slot converted
+// to the local player's real UID) and uploads it. The local save is NOT
+// modified - conversion happens on a temporary copy.
 func (a *App) UploadWorld(worldPath string) error {
+	guid := filepath.Base(worldPath)
 	s, err := a.newStorage()
 	if err != nil {
 		return err
 	}
-	data, err := palworld.PackWorld(worldPath)
+	sid, err := a.LocalSteamID()
 	if err != nil {
+		return err
+	}
+	logger.Infof("UploadWorld: world=%s packing intermediate (local untouched)", guid)
+	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
+	if err != nil {
+		logger.Errorf("UploadWorld: world=%s pack intermediate failed: %v", guid, err)
 		return err
 	}
 	up := a.cfg.Uploader
 	if up == "" {
 		up = "player"
 	}
-	_, err = storage.UploadVersion(context.Background(), s, filepath.Base(worldPath), up, bytes.NewReader(data), int64(len(data)))
-	return err
+	key, err := storage.UploadVersion(context.Background(), s, guid, up, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		logger.Errorf("UploadWorld: world=%s upload failed (%d bytes): %v", guid, len(data), err)
+		return err
+	}
+	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes)", guid, key, len(data))
+	return nil
 }
 
 // DownloadLatest downloads the newest cloud version and writes it to worldPath
@@ -185,28 +234,38 @@ func (a *App) DownloadLatest(worldPath string) error {
 
 // DownloadVersion downloads a specific version (or the latest if key is empty).
 func (a *App) DownloadVersion(worldPath, key string) error {
+	guid := filepath.Base(worldPath)
 	s, err := a.newStorage()
 	if err != nil {
 		return err
 	}
-	guid := filepath.Base(worldPath)
 	if key == "" {
 		key, err = storage.LatestVersion(context.Background(), s, guid)
 		if err != nil {
+			logger.Errorf("DownloadVersion: world=%s list latest failed: %v", guid, err)
 			return err
 		}
 		if key == "" {
+			logger.Warnf("DownloadVersion: world=%s no cloud versions", guid)
 			return fmt.Errorf("no cloud versions for world %s", guid)
 		}
 	}
+	logger.Infof("DownloadVersion: world=%s key=%s backing up", guid, key)
 	if _, err := palworld.BackupWorld(worldPath); err != nil {
+		logger.Errorf("DownloadVersion: world=%s backup failed: %v", guid, err)
 		return err
 	}
 	var buf bytes.Buffer
 	if err := s.Download(context.Background(), key, &buf, nil); err != nil {
+		logger.Errorf("DownloadVersion: world=%s key=%s download failed: %v", guid, key, err)
 		return err
 	}
-	return palworld.UnpackWorld(buf.Bytes(), worldPath)
+	if err := palworld.UnpackWorld(buf.Bytes(), worldPath); err != nil {
+		logger.Errorf("DownloadVersion: world=%s unpack failed: %v", guid, err)
+		return err
+	}
+	logger.Infof("DownloadVersion: world=%s key=%s done (%d bytes)", guid, key, buf.Len())
+	return nil
 }
 
 // ListVersions returns the cloud version history for a world.
@@ -215,7 +274,13 @@ func (a *App) ListVersions(worldGUID string) ([]storage.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return storage.ListVersions(context.Background(), s, worldGUID)
+	versions, err := storage.ListVersions(context.Background(), s, worldGUID)
+	if err != nil {
+		logger.Errorf("ListVersions: world=%s err=%v", worldGUID, err)
+		return nil, err
+	}
+	logger.Infof("ListVersions: world=%s versions=%d", worldGUID, len(versions))
+	return versions, nil
 }
 
 // LockStatus reports the play lock for a world.
@@ -224,25 +289,40 @@ func (a *App) LockStatus(worldGUID string) (storage.LockStatus, error) {
 	if err != nil {
 		return storage.LockStatus{}, err
 	}
-	return lm.Status(context.Background(), worldGUID)
+	st, err := lm.Status(context.Background(), worldGUID)
+	if err != nil {
+		logger.Errorf("LockStatus: world=%s err=%v", worldGUID, err)
+		return storage.LockStatus{}, err
+	}
+	return st, nil
 }
 
 // AcquireLock claims the play lock.
 func (a *App) AcquireLock(worldGUID, player string) error {
+	logger.Infof("AcquireLock: world=%s player=%s", worldGUID, player)
 	lm, err := a.lockManager()
 	if err != nil {
 		return err
 	}
-	return lm.Acquire(context.Background(), worldGUID, player)
+	if err := lm.Acquire(context.Background(), worldGUID, player); err != nil {
+		logger.Errorf("AcquireLock: world=%s player=%s err=%v", worldGUID, player, err)
+		return err
+	}
+	return nil
 }
 
 // ReleaseLock releases the play lock.
 func (a *App) ReleaseLock(worldGUID string) error {
+	logger.Infof("ReleaseLock: world=%s", worldGUID)
 	lm, err := a.lockManager()
 	if err != nil {
 		return err
 	}
-	return lm.Release(context.Background(), worldGUID)
+	if err := lm.Release(context.Background(), worldGUID); err != nil {
+		logger.Errorf("ReleaseLock: world=%s err=%v", worldGUID, err)
+		return err
+	}
+	return nil
 }
 
 // ---------- backups ----------
@@ -256,17 +336,18 @@ type BackupRecord struct {
 
 // ListBackups returns local backups for a world.
 func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
+	guid := filepath.Base(worldPath)
 	dir, err := palworld.BackupDir()
 	if err != nil {
 		return nil, err
 	}
-	guid := filepath.Base(worldPath)
 	bdir := filepath.Join(dir, guid)
 	entries, err := os.ReadDir(bdir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []BackupRecord{}, nil
 		}
+		logger.Errorf("ListBackups: world=%s err=%v", guid, err)
 		return nil, err
 	}
 	var out []BackupRecord
@@ -277,44 +358,76 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 		info, _ := e.Info()
 		out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime()})
 	}
+	logger.Infof("ListBackups: world=%s backups=%d", guid, len(out))
 	return out, nil
 }
 
 // RestoreBackup restores a backup (overwrites the current world after another backup).
 func (a *App) RestoreBackup(worldPath, name string) error {
+	guid := filepath.Base(worldPath)
+	logger.Infof("RestoreBackup: world=%s backup=%s", guid, name)
 	dir, err := palworld.BackupDir()
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(filepath.Join(dir, filepath.Base(worldPath), name))
+	data, err := os.ReadFile(filepath.Join(dir, guid, name))
 	if err != nil {
+		logger.Errorf("RestoreBackup: world=%s read backup failed: %v", guid, err)
 		return err
 	}
 	if _, err := palworld.BackupWorld(worldPath); err != nil {
+		logger.Errorf("RestoreBackup: world=%s pre-backup failed: %v", guid, err)
 		return err
 	}
-	return palworld.UnpackWorld(data, worldPath)
+	if err := palworld.UnpackWorld(data, worldPath); err != nil {
+		logger.Errorf("RestoreBackup: world=%s unpack failed: %v", guid, err)
+		return err
+	}
+	logger.Infof("RestoreBackup: world=%s backup=%s done", guid, name)
+	return nil
 }
 
 // ---------- import/export ----------
 
-// ExportWorld packs a world to a single .palrelay.zip file.
+// ExportWorld packs the world as the transfer intermediate to a single
+// .palrelay.zip file. The local save is NOT modified.
 func (a *App) ExportWorld(worldPath, outPath string) error {
-	data, err := palworld.PackWorld(worldPath)
+	guid := filepath.Base(worldPath)
+	logger.Infof("ExportWorld: world=%s -> %s", guid, outPath)
+	sid, err := a.LocalSteamID()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(outPath, data, 0o644)
+	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
+	if err != nil {
+		logger.Errorf("ExportWorld: world=%s pack intermediate failed: %v", guid, err)
+		return err
+	}
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		logger.Errorf("ExportWorld: write failed: %v", err)
+		return err
+	}
+	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes)", guid, outPath, len(data))
+	return nil
 }
 
 // ImportWorld unpacks a .palrelay.zip into worldPath (after backup).
 func (a *App) ImportWorld(zipPath, worldPath string) error {
+	guid := filepath.Base(worldPath)
+	logger.Infof("ImportWorld: %s -> world=%s", zipPath, guid)
 	data, err := os.ReadFile(zipPath)
 	if err != nil {
+		logger.Errorf("ImportWorld: read failed: %v", err)
 		return err
 	}
 	if _, err := palworld.BackupWorld(worldPath); err != nil {
+		logger.Errorf("ImportWorld: world=%s backup failed: %v", guid, err)
 		return err
 	}
-	return palworld.UnpackWorld(data, worldPath)
+	if err := palworld.UnpackWorld(data, worldPath); err != nil {
+		logger.Errorf("ImportWorld: world=%s unpack failed: %v", guid, err)
+		return err
+	}
+	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
+	return nil
 }

@@ -9,13 +9,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"palworld-save-relay/internal/logger"
 	"palworld-save-relay/internal/sav"
 )
 
 // HostUID is the GUID Palworld uses for the co-op host player slot.
 var HostUUID = sav.UUID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0} // 00000000-...-000000000001 (mixed-endian: byte 12 set)
 
-// World is a detected Palworld world save.
+// World is a detected Palworld world save (a full host world with Level.sav).
 type World struct {
 	GUID        string // world folder name
 	Path        string // absolute path to the world folder
@@ -33,19 +34,31 @@ type Player struct {
 }
 
 // SaveRoot returns the Palworld save root (LocalAppData/Pal/Saved/SaveGames).
+// It prefers %LOCALAPPDATA% and falls back to %USERPROFILE%\AppData\Local, so
+// an empty LOCALAPPDATA never yields a relative path.
 func SaveRoot() (string, error) {
 	root := os.Getenv("LOCALAPPDATA")
 	if root == "" {
-		return "", errors.New("LOCALAPPDATA not set")
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			root = filepath.Join(home, "AppData", "Local")
+			logger.Warnf("SaveRoot: LOCALAPPDATA empty, using fallback %s", root)
+		}
+	}
+	if root == "" {
+		return "", errors.New("cannot determine LocalAppData (LOCALAPPDATA and USERPROFILE are both unset)")
 	}
 	return filepath.Join(root, "Pal", "Saved", "SaveGames"), nil
 }
 
-// ListWorlds enumerates world save folders under root (SteamID/WorldGUID).
+// ListWorlds enumerates host world save folders under root (SteamID/WorldGUID).
+// Only worlds containing Level.sav are listed: those are full host worlds. A
+// guest-only folder (just LocalData.sav, no Level.sav) is intentionally skipped
+// because the app only deals with host uploads / downloading to become host.
 func ListWorlds(root string) ([]World, error) {
 	var worlds []World
 	steamDirs, err := os.ReadDir(root)
 	if err != nil {
+		logger.Errorf("ListWorlds: read root %s: %v", root, err)
 		return nil, err
 	}
 	for _, steamDir := range steamDirs {
@@ -54,6 +67,7 @@ func ListWorlds(root string) ([]World, error) {
 		}
 		worldDirs, err := os.ReadDir(filepath.Join(root, steamDir.Name()))
 		if err != nil {
+			logger.Warnf("ListWorlds: read %s: %v", steamDir.Name(), err)
 			continue
 		}
 		for _, wd := range worldDirs {
@@ -61,8 +75,8 @@ func ListWorlds(root string) ([]World, error) {
 				continue
 			}
 			worldPath := filepath.Join(root, steamDir.Name(), wd.Name())
-			if _, err := os.Stat(filepath.Join(worldPath, "Level.sav")); err != nil {
-				continue // not a world folder
+			if !fileExists(filepath.Join(worldPath, "Level.sav")) {
+				continue // skip guest-only saves (no Level.sav)
 			}
 			info, _ := wd.Info()
 			worlds = append(worlds, World{
@@ -208,4 +222,9 @@ func LocalSteamID(root string) (uint64, error) {
 		}
 	}
 	return 0, fmt.Errorf("palworld: no SteamID folder under %s", root)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

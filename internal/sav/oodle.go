@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	oodle "github.com/new-world-tools/go-oodle"
+
+	"palworld-save-relay/internal/logger"
 )
 
 //go:embed assets/oo2core_9_win64.dll
@@ -25,6 +27,7 @@ func ensureOodle() error {
 		dir := filepath.Join(os.TempDir(), "go-oodle")
 		path := filepath.Join(dir, "oo2core_9_win64.dll")
 		if _, err := os.Stat(path); os.IsNotExist(err) {
+			logger.Infof("ensureOodle: extracting DLL to %s", path)
 			if err = os.MkdirAll(dir, 0o755); err != nil {
 				oodleInitErr = err
 				return
@@ -35,6 +38,9 @@ func ensureOodle() error {
 			}
 		}
 	})
+	if oodleInitErr != nil {
+		logger.Errorf("ensureOodle: init failed: %v", oodleInitErr)
+	}
 	return oodleInitErr
 }
 
@@ -45,6 +51,7 @@ func OodleDecompress(comp []byte, outLen int) ([]byte, error) {
 	}
 	out, err := oodle.Decompress(comp, int64(outLen))
 	if err != nil {
+		logger.Errorf("OodleDecompress: comp=%d outLen=%d failed: %v", len(comp), outLen, err)
 		return nil, fmt.Errorf("oodle decompress: %w", err)
 	}
 	return out, nil
@@ -58,6 +65,7 @@ func OodleCompress(data []byte) ([]byte, error) {
 	}
 	out, err := oodle.Compress(data, oodle.CompressorKraken, oodle.CompressionLevelNormal)
 	if err != nil {
+		logger.Errorf("OodleCompress: in=%d failed: %v", len(data), err)
 		return nil, fmt.Errorf("oodle compress: %w", err)
 	}
 	return out, nil

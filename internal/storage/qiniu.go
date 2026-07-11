@@ -12,6 +12,8 @@ import (
 
 	"github.com/qiniu/go-sdk/v7/auth"
 	"github.com/qiniu/go-sdk/v7/storage"
+
+	"palworld-save-relay/internal/logger"
 )
 
 // QiniuConfig holds Qiniu Kodo credentials and bucket settings.
@@ -56,8 +58,10 @@ func NewQiniu(c QiniuConfig) (*Qiniu, error) {
 		q.domain = doms[0].Domain
 	}
 	if q.domain == "" {
+		logger.Errorf("NewQiniu: bucket=%s no download domain", c.Bucket)
 		return nil, errors.New("storage: no download domain for bucket; bind one or set Domain")
 	}
+	logger.Infof("NewQiniu: bucket=%s region=%s domain=%s", c.Bucket, c.Region, q.domain)
 	return q, nil
 }
 
@@ -94,8 +98,10 @@ func (q *Qiniu) Upload(ctx context.Context, key string, r io.Reader, size int64)
 	}
 	var ret storage.PutRet
 	if err := q.uploader.Put(ctx, &ret, q.putToken(key), key, bytes.NewReader(data), int64(len(data)), &storage.RputExtra{}); err != nil {
+		logger.Errorf("Qiniu.Upload: key=%s size=%d failed: %v", key, len(data), err)
 		return fmt.Errorf("storage: qiniu upload: %w", err)
 	}
+	logger.Infof("Qiniu.Upload: key=%s size=%d ok", key, len(data))
 	return nil
 }
 
@@ -117,6 +123,7 @@ func (q *Qiniu) downloadURL(key string) string {
 func (q *Qiniu) Download(ctx context.Context, key string, w io.Writer, prog func(done, total int64)) error {
 	total, err := q.size(ctx, key)
 	if err != nil {
+		logger.Errorf("Qiniu.Download: key=%s head failed: %v", key, err)
 		return err
 	}
 	if prog != nil {
@@ -191,6 +198,7 @@ func (q *Qiniu) List(ctx context.Context, prefix string) ([]Object, error) {
 	for {
 		entries, _, next, hasNext, err := q.bm.ListFiles(q.cfg.Bucket, prefix, "", marker, 1000)
 		if err != nil {
+			logger.Errorf("Qiniu.List: prefix=%s failed: %v", prefix, err)
 			return nil, fmt.Errorf("storage: qiniu list: %w", err)
 		}
 		for _, e := range entries {
@@ -202,6 +210,7 @@ func (q *Qiniu) List(ctx context.Context, prefix string) ([]Object, error) {
 		}
 		marker = next
 	}
+	logger.Infof("Qiniu.List: prefix=%s count=%d", prefix, len(out))
 	return out, nil
 }
 
@@ -212,7 +221,9 @@ func (q *Qiniu) Delete(ctx context.Context, key string) error {
 		if strings.Contains(s, "no such file") || strings.Contains(s, "612") {
 			return ErrNotFound
 		}
+		logger.Errorf("Qiniu.Delete: key=%s failed: %v", key, err)
 		return fmt.Errorf("storage: qiniu delete: %w", err)
 	}
+	logger.Infof("Qiniu.Delete: key=%s ok", key)
 	return nil
 }
