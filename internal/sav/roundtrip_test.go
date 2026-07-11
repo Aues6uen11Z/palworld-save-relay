@@ -53,4 +53,3 @@ func TestTwoHopStability(t *testing.T) {
 		})
 	}
 }
-

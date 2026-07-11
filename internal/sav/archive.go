@@ -106,16 +106,20 @@ func (r *FArchiveReader) ReadToEnd() []byte {
 // Skip advances the read position by n bytes.
 func (r *FArchiveReader) Skip(n int) { r.pos += n }
 
-func (r *FArchiveReader) Byte() byte      { return r.Read(1)[0] }
-func (r *FArchiveReader) Bool() bool      { return r.Byte() > 0 }
-func (r *FArchiveReader) I16() int16      { return int16(binary.LittleEndian.Uint16(r.Read(2))) }
-func (r *FArchiveReader) U16() uint16     { return binary.LittleEndian.Uint16(r.Read(2)) }
-func (r *FArchiveReader) I32() int32      { return int32(binary.LittleEndian.Uint32(r.Read(4))) }
-func (r *FArchiveReader) U32() uint32     { return binary.LittleEndian.Uint32(r.Read(4)) }
-func (r *FArchiveReader) I64() int64      { return int64(binary.LittleEndian.Uint64(r.Read(8))) }
-func (r *FArchiveReader) U64() uint64     { return binary.LittleEndian.Uint64(r.Read(8)) }
-func (r *FArchiveReader) Float() float32  { return math.Float32frombits(binary.LittleEndian.Uint32(r.Read(4))) }
-func (r *FArchiveReader) Double() float64 { return math.Float64frombits(binary.LittleEndian.Uint64(r.Read(8))) }
+func (r *FArchiveReader) Byte() byte  { return r.Read(1)[0] }
+func (r *FArchiveReader) Bool() bool  { return r.Byte() > 0 }
+func (r *FArchiveReader) I16() int16  { return int16(binary.LittleEndian.Uint16(r.Read(2))) }
+func (r *FArchiveReader) U16() uint16 { return binary.LittleEndian.Uint16(r.Read(2)) }
+func (r *FArchiveReader) I32() int32  { return int32(binary.LittleEndian.Uint32(r.Read(4))) }
+func (r *FArchiveReader) U32() uint32 { return binary.LittleEndian.Uint32(r.Read(4)) }
+func (r *FArchiveReader) I64() int64  { return int64(binary.LittleEndian.Uint64(r.Read(8))) }
+func (r *FArchiveReader) U64() uint64 { return binary.LittleEndian.Uint64(r.Read(8)) }
+func (r *FArchiveReader) Float() float32 {
+	return math.Float32frombits(binary.LittleEndian.Uint32(r.Read(4)))
+}
+func (r *FArchiveReader) Double() float64 {
+	return math.Float64frombits(binary.LittleEndian.Uint64(r.Read(8)))
+}
 
 // Guid reads a 16-byte GUID.
 func (r *FArchiveReader) Guid() *UUID {
@@ -221,14 +225,46 @@ func (w *FArchiveWriter) Bool(b bool) {
 		w.buf.WriteByte(0)
 	}
 }
-func (w *FArchiveWriter) I16(v int16)  { var b [2]byte; binary.LittleEndian.PutUint16(b[:], uint16(v)); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) U16(v uint16) { var b [2]byte; binary.LittleEndian.PutUint16(b[:], v); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) I32(v int32)  { var b [4]byte; binary.LittleEndian.PutUint32(b[:], uint32(v)); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) U32(v uint32) { var b [4]byte; binary.LittleEndian.PutUint32(b[:], v); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) I64(v int64)  { var b [8]byte; binary.LittleEndian.PutUint64(b[:], uint64(v)); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) U64(v uint64) { var b [8]byte; binary.LittleEndian.PutUint64(b[:], v); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) Float(v float32)  { var b [4]byte; binary.LittleEndian.PutUint32(b[:], math.Float32bits(v)); w.buf.Write(b[:]) }
-func (w *FArchiveWriter) Double(v float64) { var b [8]byte; binary.LittleEndian.PutUint64(b[:], math.Float64bits(v)); w.buf.Write(b[:]) }
+func (w *FArchiveWriter) I16(v int16) {
+	var b [2]byte
+	binary.LittleEndian.PutUint16(b[:], uint16(v))
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) U16(v uint16) {
+	var b [2]byte
+	binary.LittleEndian.PutUint16(b[:], v)
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) I32(v int32) {
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], uint32(v))
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) U32(v uint32) {
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], v)
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) I64(v int64) {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], uint64(v))
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) U64(v uint64) {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], v)
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) Float(v float32) {
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
+	w.buf.Write(b[:])
+}
+func (w *FArchiveWriter) Double(v float64) {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], math.Float64bits(v))
+	w.buf.Write(b[:])
+}
 
 // Guid writes a 16-byte GUID (zero if nil).
 func (w *FArchiveWriter) Guid(u *UUID) {

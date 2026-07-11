@@ -498,7 +498,6 @@ func asU64(v any) uint64 {
 	}
 	return v.(uint64)
 }
-func asI64(v any) int64 { return v.(int64) }
+func asI64(v any) int64   { return v.(int64) }
 func asF32(v any) float32 { return v.(float32) }
 func asF64(v any) float64 { return v.(float64) }
-
