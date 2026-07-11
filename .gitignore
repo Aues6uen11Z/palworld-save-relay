@@ -13,3 +13,6 @@ backups/
 
 # real save fixtures (personal data; fetch via testdata/fetch.ps1)
 internal/sav/testdata/*.sav
+
+# scratch debug commands
+cmd/
