@@ -74,5 +74,8 @@ func PalWorldConfig() (map[string]string, map[string]CustomProperty) {
 	for _, p := range rawdataPaths {
 		custom[p] = skip
 	}
+	// CharacterSaveParameterMap.RawData is parsed (player/pal info + ownership).
+	custom[".worldSaveData.CharacterSaveParameterMap.Value.RawData"] =
+		CustomProperty{Decode: characterDecodeSafe, Encode: characterEncodeSafe}
 	return PalWorldTypeHints, custom
 }

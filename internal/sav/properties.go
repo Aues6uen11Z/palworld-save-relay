@@ -20,8 +20,15 @@ func (r *FArchiveReader) PropertiesUntilEnd(path string) PropertyList {
 // Property reads one property value, dispatching to a registered custom
 // handler (by path) when present, else to the built-in type reader.
 func (r *FArchiveReader) Property(typeName string, size int, path string) map[string]any {
+	return r.propertyWithNested(typeName, size, path, "")
+}
+
+// propertyWithNested is Property with a nested-caller path: when path equals
+// nested, the custom handler is skipped so a decoder can read its own container
+// (e.g. an ArrayProperty of bytes) without re-entering itself.
+func (r *FArchiveReader) propertyWithNested(typeName string, size int, path, nested string) map[string]any {
 	var value map[string]any
-	if cp, ok := r.customProperties[path]; ok {
+	if cp, ok := r.customProperties[path]; ok && path != nested {
 		value = cp.Decode(r, typeName, size, path)
 		value["custom_type"] = path
 	} else {
@@ -29,6 +36,12 @@ func (r *FArchiveReader) Property(typeName string, size int, path string) map[st
 	}
 	value["type"] = typeName
 	return value
+}
+
+// propertyInnerNoCustom writes a property via the built-in dispatch, ignoring
+// any custom_type. Used by custom encoders to write their container normally.
+func (w *FArchiveWriter) propertyInnerNoCustom(propertyType string, p map[string]any) int {
+	return w.propertyInner(propertyType, p)
 }
 
 func (r *FArchiveReader) readPropertyByType(typeName string, size int, path string) map[string]any {
