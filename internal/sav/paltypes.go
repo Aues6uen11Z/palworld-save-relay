@@ -68,7 +68,7 @@ var rawdataPaths = []string{
 
 // PalWorldConfig returns the type hints and custom-property handlers used to
 // read/write Palworld saves with all RawData passed through opaquely.
-func PalWorldConfig() (map[string]string, map[string]CustomProperty) {
+func palWorldConfig(withCharacter bool) (map[string]string, map[string]CustomProperty) {
 	custom := make(map[string]CustomProperty, len(rawdataPaths))
 	skip := CustomProperty{Decode: skipDecode, Encode: skipEncode}
 	for _, p := range rawdataPaths {
@@ -78,4 +78,15 @@ func PalWorldConfig() (map[string]string, map[string]CustomProperty) {
 	custom[".worldSaveData.CharacterSaveParameterMap.Value.RawData"] =
 		CustomProperty{Decode: characterDecodeSafe, Encode: characterEncodeSafe}
 	return PalWorldTypeHints, custom
+}
+
+// PalWorldConfig parses character RawData (for reading player info).
+func PalWorldConfig() (map[string]string, map[string]CustomProperty) {
+	return palWorldConfig(true)
+}
+
+// PalWorldSwapConfig leaves all RawData opaque (for host swap: raw-byte GUID
+// swapping of ownership fields inside blobs).
+func PalWorldSwapConfig() (map[string]string, map[string]CustomProperty) {
+	return palWorldConfig(false)
 }
