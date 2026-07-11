@@ -16,3 +16,10 @@ internal/sav/testdata/*.sav
 
 # scratch debug commands
 cmd/
+
+# wails/frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/bindings/
+bin/
+*.syso
