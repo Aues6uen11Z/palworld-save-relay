@@ -1,0 +1,12 @@
+# reference repos cloned for research (not part of project)
+PalworldSaveTools/
+palworld-server-tool/
+research/
+
+# build artifacts
+dist/
+build/
+frontend/node_modules/
+frontend/dist/
+*.exe
+backups/
