@@ -1,9 +1,18 @@
 package sav
 
+// cloneBytes returns a copy of b, so callers can mutate it without affecting
+// the underlying GVAS buffer (FArchiveReader.Read returns subslices).
+func cloneBytes(b []byte) []byte {
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
+}
+
 // skipDecode reads a RawData payload opaquely, preserving the type-specific
 // header (array_type+id / key+value+id / struct_type+struct_id+id) and storing
-// the remaining `size` bytes verbatim. This lets unknown custom properties
-// round-trip byte-identically without a dedicated parser.
+// a COPY of the remaining `size` bytes verbatim. This lets unknown custom
+// properties round-trip byte-identically without a dedicated parser, and lets
+// host-swap raw-byte-replace UIDs inside the blob without corrupting source.
 //
 // The u64 property size excludes this type-specific header.
 func skipDecode(r *FArchiveReader, typeName string, size int, path string) map[string]any {
@@ -11,17 +20,17 @@ func skipDecode(r *FArchiveReader, typeName string, size int, path string) map[s
 	case "ArrayProperty":
 		arrayType := r.FString()
 		id := r.OptionalGuid()
-		return map[string]any{"skip_type": typeName, "array_type": arrayType, "id": id, "value": r.Read(size)}
+		return map[string]any{"skip_type": typeName, "array_type": arrayType, "id": id, "value": cloneBytes(r.Read(size))}
 	case "MapProperty":
 		keyType := r.FString()
 		valueType := r.FString()
 		id := r.OptionalGuid()
-		return map[string]any{"skip_type": typeName, "key_type": keyType, "value_type": valueType, "id": id, "value": r.Read(size)}
+		return map[string]any{"skip_type": typeName, "key_type": keyType, "value_type": valueType, "id": id, "value": cloneBytes(r.Read(size))}
 	case "StructProperty":
 		structType := r.FString()
 		structID := r.Guid()
 		id := r.OptionalGuid()
-		return map[string]any{"skip_type": typeName, "struct_type": structType, "struct_id": structID, "id": id, "value": r.Read(size)}
+		return map[string]any{"skip_type": typeName, "struct_type": structType, "struct_id": structID, "id": id, "value": cloneBytes(r.Read(size))}
 	default:
 		panic("sav: skip expects Array/Map/StructProperty, got " + typeName + " (" + path + ")")
 	}

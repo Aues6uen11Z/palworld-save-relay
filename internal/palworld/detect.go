@@ -190,3 +190,22 @@ func ListPlayers(worldDir string) ([]Player, error) {
 	}
 	return PlayersFromLevel(gvas)
 }
+
+// LocalSteamID returns the SteamID64 of the local player (the save folder name
+// under root), used to derive the host's real UID via SteamIDToPlayerUUID.
+func LocalSteamID(root string) (uint64, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		var sid uint64
+		if _, err := fmt.Sscanf(e.Name(), "%d", &sid); err == nil && sid > 0 {
+			return sid, nil
+		}
+	}
+	return 0, fmt.Errorf("palworld: no SteamID folder under %s", root)
+}
