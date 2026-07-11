@@ -77,3 +77,24 @@ func WriteGvasHeader(w *FArchiveWriter, h GvasHeader) {
 	}
 	w.FString(h.SaveGameClassName)
 }
+
+// ReadGvasFile parses GVAS bytes into a GvasFile, applying type hints and
+// custom-property handlers.
+func ReadGvasFile(data []byte, typeHints map[string]string, custom map[string]CustomProperty) (*GvasFile, error) {
+	r := NewFArchiveReader(data, typeHints, custom)
+	hdr, err := ReadGvasHeader(r)
+	if err != nil {
+		return nil, err
+	}
+	props := r.PropertiesUntilEnd("")
+	return &GvasFile{Header: hdr, Properties: props, Trailer: r.ReadToEnd()}, nil
+}
+
+// Write serializes the GvasFile back to GVAS bytes.
+func (g *GvasFile) Write(custom map[string]CustomProperty) []byte {
+	w := NewFArchiveWriter(custom)
+	WriteGvasHeader(w, g.Header)
+	w.Properties(g.Properties)
+	w.Write(g.Trailer)
+	return w.Bytes()
+}
