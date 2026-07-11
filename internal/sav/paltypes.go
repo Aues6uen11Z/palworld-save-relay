@@ -74,9 +74,13 @@ func palWorldConfig(withCharacter bool) (map[string]string, map[string]CustomPro
 	for _, p := range rawdataPaths {
 		custom[p] = skip
 	}
-	// CharacterSaveParameterMap.RawData is parsed (player/pal info + ownership).
-	custom[".worldSaveData.CharacterSaveParameterMap.Value.RawData"] =
-		CustomProperty{Decode: characterDecodeSafe, Encode: characterEncodeSafe}
+	// With character+group decoded (reading player/guild info and host swap).
+	if withCharacter {
+		custom[".worldSaveData.CharacterSaveParameterMap.Value.RawData"] =
+			CustomProperty{Decode: characterDecodeSafe, Encode: characterEncodeSafe}
+		custom[".worldSaveData.GroupSaveDataMap"] =
+			CustomProperty{Decode: groupDecodeSafe, Encode: groupEncodeSafe}
+	}
 	return PalWorldTypeHints, custom
 }
 
