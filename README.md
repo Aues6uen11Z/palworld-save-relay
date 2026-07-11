@@ -53,7 +53,7 @@ go build -o bin/palworld-save-relay.exe .
 
 ```bash
 wails3 dev                 # 热重载开发
-go test ./...              # 后端测试（含真实存档往返）
+go test ./internal/...     # 后端测试（含真实存档往返）
 ```
 
 测试夹具是真实 Palworld 存档（PlZ/zlib 与 PlM/Oodle 各覆盖），已 gitignore（隐私）。首次运行拷贝：
@@ -85,3 +85,4 @@ cd internal/sav/testdata; ./fetch.ps1
 ## License
 
 MIT
+
