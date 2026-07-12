@@ -125,21 +125,20 @@ export default function AppView() {
               onActivate={() => run("接手当房主", () => App.ActivateHost(selWorld!.Path))}
               onExport={async () => {
                 if (!selWorld) return;
+                setBusy(true);
                 try {
-                  const out = await Dialogs.SaveFile({
-                    Title: "导出存档",
-                    Filename: `${selWorld.GUID}.palrelay.zip`,
-                    Filters: [{ DisplayName: "存档包", Pattern: "*.palrelay.zip" }],
-                  });
-                  if (!out) return;
-                  await run("导出存档", () => App.ExportWorld(selWorld!.Path, out));
+                  const p = await App.ExportWorld(selWorld!.Path);
+                  flash("ok", "已导出到：" + p);
                 } catch (e: any) { flash("err", "导出失败: " + (e?.message || e)); }
+                finally { setBusy(false); }
               }}
               onImport={async () => {
                 if (!selWorld) return;
                 try {
                   const res = await Dialogs.OpenFile({
                     Title: "导入存档",
+                    AllowsMultipleSelection: true,
+                    CanChooseFiles: true,
                     Filters: [{ DisplayName: "存档包", Pattern: "*.palrelay.zip;*.zip" }],
                   });
                   const inPath = Array.isArray(res) ? res[0] : res;
@@ -263,7 +262,7 @@ function WorldsView(props: {
 
           <div className="card p-4">
             <h2 className="font-semibold mb-1">手动传输</h2>
-            <p className="text-xs text-gray-500 mb-3">没配云服务也能用：导出存档为单文件发给对方（不影响本机，你仍是房主），对方导入后自动成为新房主。</p>
+            <p className="text-xs text-gray-500 mb-3">没配云服务也能用：点「导出存档」会存到桌面（不影响本机，你仍是房主），把文件发给对方；对方点「导入存档」选该文件即自动成为新房主。</p>
             <div className="flex flex-wrap gap-2">
               <button className="btn-ghost" disabled={busy} onClick={props.onExport}>📤 导出存档</button>
               <button className="btn-ghost" disabled={busy} onClick={props.onImport}>📥 导入存档</button>

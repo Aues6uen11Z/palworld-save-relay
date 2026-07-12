@@ -389,26 +389,53 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 
 // ---------- import/export ----------
 
-// ExportWorld packs the world as the transfer intermediate to a single
-// .palrelay.zip file. The local save is NOT modified.
-func (a *App) ExportWorld(worldPath, outPath string) error {
+// ExportWorld packs the world as the transfer intermediate to a .palrelay.zip on
+// the user's Desktop and returns the written path. The local save is NOT
+// modified. (The Wails alpha save dialog mangles backslash paths it returns, so
+// Go picks a fixed writable destination instead of using that dialog.)
+func (a *App) ExportWorld(worldPath string) (string, error) {
 	guid := filepath.Base(worldPath)
-	logger.Infof("ExportWorld: world=%s -> %s", guid, outPath)
 	sid, err := a.LocalSteamID()
 	if err != nil {
-		return err
+		return "", err
 	}
+	logger.Infof("ExportWorld: world=%s packing intermediate (local untouched)", guid)
 	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
 	if err != nil {
 		logger.Errorf("ExportWorld: world=%s pack intermediate failed: %v", guid, err)
-		return err
+		return "", err
 	}
-	if err := os.WriteFile(outPath, data, 0o644); err != nil {
-		logger.Errorf("ExportWorld: write failed: %v", err)
-		return err
+	out, err := exportDest(guid + ".palrelay.zip")
+	if err != nil {
+		logger.Errorf("ExportWorld: resolve dest failed: %v", err)
+		return "", err
 	}
-	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes)", guid, outPath, len(data))
-	return nil
+	if err := os.WriteFile(out, data, 0o644); err != nil {
+		logger.Errorf("ExportWorld: write %s failed: %v", out, err)
+		return "", err
+	}
+	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes)", guid, out, len(data))
+	return out, nil
+}
+
+// exportDest picks a writable destination for an exported file: Desktop first,
+// then the app data exports dir as a fallback.
+func exportDest(name string) (string, error) {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		desktop := filepath.Join(home, "Desktop", name)
+		if info, err := os.Stat(filepath.Dir(desktop)); err == nil && info.IsDir() {
+			return desktop, nil
+		}
+	}
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		return "", fmt.Errorf("cannot determine export destination")
+	}
+	dir := filepath.Join(appData, "PalSaveRelay", "exports")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
 }
 
 // ImportWorld unpacks a .palrelay.zip into worldPath (after backup).
