@@ -6,7 +6,6 @@
 
 > A desktop tool for **swapping the host** of a Palworld co-op save. Lets multiple players take turns being the host while sharing one world's progress. **Single-file exe, zero install.**
 
-![Screenshot](screenshot.png)
 
 ---
 
