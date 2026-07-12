@@ -93,16 +93,18 @@ func zoneFor(region string) *storage.Zone {
 
 // normalizeDomain ensures the download domain has an http(s):// scheme; Qiniu's
 // auto-detected domain is a bare host and MakePrivateURL does not add a scheme,
-// which would yield a scheme-less URL Go's http client rejects.
+// which would yield a scheme-less URL Go's http client rejects. Defaults to
+// http:// (test domains and unfiled custom domains are http-only); an explicit
+// https:// prefix is respected.
 func normalizeDomain(d string) string {
 	d = strings.TrimSpace(d)
 	if d == "" {
 		return d
 	}
-	if !strings.HasPrefix(d, "http://") && !strings.HasPrefix(d, "https://") {
-		d = "https://" + d
+	if strings.HasPrefix(d, "http://") || strings.HasPrefix(d, "https://") {
+		return d
 	}
-	return d
+	return "http://" + d
 }
 
 func (q *Qiniu) putToken(key string) string {
