@@ -96,11 +96,11 @@ export default function AppView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selWorld?.Path]);
 
-  const run = async (label: string, fn: () => Promise<void>) => {
+  const run = async (label: string, fn: () => Promise<void>, successMsg?: string) => {
     setBusy(true);
     try {
       await fn();
-      flash("ok", t("common.done", label));
+      flash("ok", successMsg || t("common.done", label));
       // Re-detect: download/import can turn a guest-only folder into a host
       // world (Level.sav written), so IsHost must be refreshed before we
       // reload the player list.
@@ -166,7 +166,7 @@ export default function AppView() {
               busy={busy}
               saveRoot={saveRoot}
               detectErr={detectErr}
-              onUpload={() => run(t("label.upload"), () => App.UploadWorld(selWorld!.Path))}
+              onUpload={() => run(t("label.upload"), () => App.UploadWorld(selWorld!.Path), t("toast.uploaded"))}
               onDownload={() => run(t("label.downloadLatest"), () => App.DownloadLatest(selWorld!.Path))}
               onActivate={() => run(t("label.activate"), () => App.ActivateHost(selWorld!.Path))}
               onExport={async () => {

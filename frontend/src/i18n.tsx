@@ -35,6 +35,7 @@ const dict: Dict = {
   "toast.configSaved": { zh: "配置已保存", en: "Config saved" },
   "toast.versionDownloaded": { zh: "已下载该版本", en: "Version downloaded" },
   "toast.rolledBack": { zh: "已回滚", en: "Rolled back" },
+  "toast.uploaded": { zh: "存档已上传，本机已转为访客模式（可在「备份」页回滚）", en: "Save uploaded; local save reduced to guest mode (restore from Backups to play again)" },
 
   "label.upload": { zh: "上传存档", en: "Upload Save" },
   "label.downloadLatest": { zh: "下载最新", en: "Download Latest" },
@@ -67,8 +68,8 @@ const dict: Dict = {
   "worlds.guestOnly": { zh: "非房主不可用：先下载存档成为房主", en: "Guest-only: download the save first to become host" },
   "worlds.swapHost": { zh: "换房主", en: "Swap Host" },
   "worlds.swapHostDesc": {
-    zh: "当前房主点「上传存档」把存档发到云端（不影响本机，你仍是房主）。接手方先「下载最新」再「换我当房主」即可成为新房主。",
-    en: "The current host clicks Upload Save to push the save to the cloud (your local save stays untouched, you remain host). The person taking over clicks Download Latest, then Take Over as Host to become the new host.",
+    zh: "当前房主点「上传存档」把存档发到云端，本机存档会转为访客模式（只剩个人数据，不能继续游玩；可在「备份」页回滚恢复）。接手方先「下载最新」再「换我当房主」即可成为新房主。",
+    en: "The current host clicks Upload Save to push the save to the cloud; the local save is then reduced to guest-only (personal data only - restore from Backups to play again). The person taking over clicks Download Latest, then Take Over as Host.",
   },
   "worlds.btnUpload": { zh: "⬆ 上传存档", en: "⬆ Upload Save" },
   "worlds.btnDownload": { zh: "⬇ 下载最新", en: "⬇ Download Latest" },

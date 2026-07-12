@@ -195,8 +195,10 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 }
 
 // UploadWorld packs the world as the transfer intermediate (host slot converted
-// to the local player's real UID) and uploads it. The local save is NOT
-// modified - conversion happens on a temporary copy.
+// to the local player's real UID) and uploads it. After a successful upload the
+// local world is stripped to a guest-only folder (just LocalData.sav) so the
+// former host cannot keep playing a stale, conflicting copy. A full backup is
+// made first so the host can restore via the Backups page to play again.
 func (a *App) UploadWorld(worldPath string) error {
 	guid := filepath.Base(worldPath)
 	s, err := a.newStorage()
@@ -207,7 +209,7 @@ func (a *App) UploadWorld(worldPath string) error {
 	if err != nil {
 		return err
 	}
-	logger.Infof("UploadWorld: world=%s packing intermediate (local untouched)", guid)
+	logger.Infof("UploadWorld: world=%s packing intermediate", guid)
 	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
 	if err != nil {
 		logger.Errorf("UploadWorld: world=%s pack intermediate failed: %v", guid, err)
@@ -222,7 +224,18 @@ func (a *App) UploadWorld(worldPath string) error {
 		logger.Errorf("UploadWorld: world=%s upload failed (%d bytes): %v", guid, len(data), err)
 		return err
 	}
-	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes)", guid, key, len(data))
+	// Upload succeeded: back up the full world, then strip to guest-only so the
+	// former host cannot keep a conflicting host copy. They can restore from
+	// the backup just made (Backups page) to play again.
+	if _, err := palworld.BackupWorld(worldPath); err != nil {
+		logger.Errorf("UploadWorld: world=%s post-upload backup failed: %v", guid, err)
+		return err
+	}
+	if err := palworld.StripToGuest(worldPath); err != nil {
+		logger.Errorf("UploadWorld: world=%s strip to guest failed: %v", guid, err)
+		return err
+	}
+	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes), stripped to guest", guid, key, len(data))
 	return nil
 }
 
@@ -362,10 +375,16 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 	return out, nil
 }
 
-// RestoreBackup restores a backup (overwrites the current world after another backup).
+// RestoreBackup restores a backup: backs up the current state (safety net),
+// then fully replaces the world folder with the backup contents (deletes
+// everything first, then extracts - not just an overlay).
 func (a *App) RestoreBackup(worldPath, name string) error {
 	guid := filepath.Base(worldPath)
 	logger.Infof("RestoreBackup: world=%s backup=%s", guid, name)
+	if err := palworld.AssertGameNotRunning(); err != nil {
+		logger.Errorf("RestoreBackup: world=%s game running: %v", guid, err)
+		return err
+	}
 	dir, err := palworld.BackupDir()
 	if err != nil {
 		return err
@@ -379,8 +398,8 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 		logger.Errorf("RestoreBackup: world=%s pre-backup failed: %v", guid, err)
 		return err
 	}
-	if err := palworld.UnpackWorld(data, worldPath); err != nil {
-		logger.Errorf("RestoreBackup: world=%s unpack failed: %v", guid, err)
+	if err := palworld.ReplaceWorld(worldPath, data); err != nil {
+		logger.Errorf("RestoreBackup: world=%s replace failed: %v", guid, err)
 		return err
 	}
 	logger.Infof("RestoreBackup: world=%s backup=%s done", guid, name)

@@ -138,17 +138,59 @@ func convertFile(path, outPath string, from, to sav.UUID, hints map[string]strin
 	return os.Rename(tmp, outPath)
 }
 
+// StripToGuest removes all world data except LocalData.sav (and the game's own
+// backup/ subdir), turning a host world into a guest-only folder. Used after
+// uploading so the former host cannot keep a conflicting host copy; they can
+// restore from a backup to play again. Asserts the game is not running.
+func StripToGuest(worldDir string) error {
+	if err := assertGameNotRunning(); err != nil {
+		return err
+	}
+	guid := filepath.Base(worldDir)
+	entries, err := os.ReadDir(worldDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if name == "LocalData.sav" {
+			continue
+		}
+		if e.IsDir() && name == "backup" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(worldDir, name)); err != nil {
+			return fmt.Errorf("remove %s: %w", name, err)
+		}
+	}
+	logger.Infof("StripToGuest: world=%s stripped to LocalData.sav only", guid)
+	return nil
+}
+
+// ReplaceWorld clears worldDir (keeping the game's own backup/ subdir) then
+// extracts zipBytes into it, ensuring a full clean restore rather than
+// overlaying files (which would leave stale extras behind).
+func ReplaceWorld(worldDir string, zipBytes []byte) error {
+	guid := filepath.Base(worldDir)
+	entries, _ := os.ReadDir(worldDir)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() && name == "backup" {
+			continue
+		}
+		os.RemoveAll(filepath.Join(worldDir, name))
+	}
+	if err := UnpackWorld(zipBytes, worldDir); err != nil {
+		return fmt.Errorf("unpack: %w", err)
+	}
+	logger.Infof("ReplaceWorld: world=%s replaced (%d bytes)", guid, len(zipBytes))
+	return nil
+}
+
 func restoreFromBackup(worldDir, backupZip string) error {
 	data, err := os.ReadFile(backupZip)
 	if err != nil {
 		return err
 	}
-	entries, _ := os.ReadDir(worldDir)
-	for _, e := range entries {
-		if e.IsDir() && e.Name() == "backup" {
-			continue
-		}
-		os.RemoveAll(filepath.Join(worldDir, e.Name()))
-	}
-	return UnpackWorld(data, worldDir)
+	return ReplaceWorld(worldDir, data)
 }

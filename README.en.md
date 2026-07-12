@@ -15,6 +15,8 @@ Grab `palworld-save-relay.exe` from the [Releases](https://github.com/Aues6uen11
 
 > On first launch it auto-detects your Palworld save directory (`%LocalAppData%\Pal\Saved\SaveGames`).
 
+> ⚠️ **Make sure to disable Steam Cloud saves for Palworld** (Steam -> game Properties -> General -> uncheck "Keep games saves in the Steam Cloud"). Steam Cloud conflicts with this tool's save replacement and can overwrite saves after a host swap or rollback.
+
 ## Usage
 
 Pick a world on the **Host Swap** page, then choose one of two methods:
@@ -22,7 +24,7 @@ Pick a world on the **Host Swap** page, then choose one of two methods:
 ### Method 1: Cloud Sync (recommended)
 
 1. **(first time only)** Go to **Settings** and configure Qiniu Kodo: enter AccessKey / SecretKey / Bucket. Region is auto-detected; leave download domain blank for auto.
-2. **Current host**: click **⬆ Upload Save** -- your local save is untouched, you remain host.
+2. **Current host**: click **⬆ Upload Save** -- after uploading, your local save is reduced to guest-only (personal data only; cannot play until restored from the **Backups** page).
 3. **Person taking over**: click **⬇ Download Latest**, then **🎯 Take Over as Host**, and launch the game.
 
 ### Method 2: Manual Transfer (no cloud needed)
@@ -52,7 +54,7 @@ In co-op mode the save lives only on the host's machine; when the host goes offl
 Inside the save, the host's own UID is the sentinel `00000000-0000-0000-0000-000000000001`; everyone else (guests) has a real UID derived from their SteamID (`cityhash64`).
 
 - **Intermediate state**: replace the host sentinel `0000…0001` with the host's real UID, yielding "everyone is a real UID, nobody is the host" -- this is the transfer format.
-- **Upload / Export**: the conversion runs on a **temporary copy** that is then packaged -- **your local save is untouched** (you remain host after uploading).
+- **Upload**: the conversion runs on a **temporary copy** that is packaged and uploaded; after a successful upload **your local save is stripped to guest-only** (just LocalData.sav) so the former host cannot keep a conflicting copy (a backup is made first, restorable). **Export** only packages the temporary copy and does not touch your local save.
 - **Download / Import**: overwrite your local save with the intermediate state (after backing up), then swap your real UID to `0000…0001`, making you the new host.
 
 The core operation ConvertHost(fromUID -> toUID) is a **one-way global UID replacement** (not a two-way swap), combined with the intermediate state to achieve host-swapping. Each person's save data always stays under their own real UID and is never lost across transfers.
@@ -105,7 +107,7 @@ cd internal/sav/testdata; ./fetch.ps1
 
 - The host's real UID may already exist in the save (e.g. OldOwnerPlayerUIds). A single "handoff" can create duplicate references -- **this does not affect host-swapping**.
 - Guild `individual_character_handle_ids` guids are not currently included in the replacement; patch if guild-member ownership issues are observed.
-- Upload / export only touch a temporary copy and never modify your local save; download / import overwrite the local world (after backup); Take Over as Host modifies the local save (after backup).
+- After uploading, your local save is stripped to guest-only (a backup is made first, restorable); export only touches a temporary copy; download / import / rollback fully replace the local world (backup first, then overwrite); Take Over as Host modifies the local save (after backup).
 
 ## Acknowledgements
 

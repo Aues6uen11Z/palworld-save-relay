@@ -10,4 +10,7 @@ func assertGameNotRunning() error {
 	return nil
 }
 
+// AssertGameNotRunning is the exported wrapper for use by the app layer.
+func AssertGameNotRunning() error { return assertGameNotRunning() }
+
 var errGameRunning = errStr("Palworld is running; please close it before modifying saves")
