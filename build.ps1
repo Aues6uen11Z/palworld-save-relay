@@ -4,11 +4,10 @@
 
 .DESCRIPTION
   Run this after editing frontend, Go sources, or the app icon.
-  If ./icon.png exists in the repo root it is used as the app icon source.
+  The app icon source is build/appicon.png; replace it to change the icon.
   Steps:
     1. frontend:  npm run build  (tsc type-check + vite build -> frontend/dist)
-    2. icon:      copy ./icon.png (if present) -> build/appicon.png, then
-                  wails3 generate icons  (-> build/icon.ico, build/icons.icns)
+    2. icon:      wails3 generate icons  (build/appicon.png -> build/icon.ico, build/icons.icns)
     3. syso:      wails3 generate syso  (icon + manifest -> wails.syso)
     4. go:        go build  (embeds frontend/dist + syso -> palworld-save-relay.exe)
 
@@ -39,17 +38,11 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 } finally { Pop-Location }
 
-# --- 2. App icon ---
-$srcIcon = Join-Path $root "icon.png"
-$dstIcon = Join-Path $root "build\appicon.png"
-if (Test-Path $srcIcon) {
-  Step "Updating app icon from ./icon.png ..."
-  Copy-Item -LiteralPath $srcIcon -Destination $dstIcon -Force
-}
-Step "Generating icons (.ico / .icns) from appicon.png ..."
+# --- 2. App icon (regenerate .ico/.icns from build/appicon.png) ---
+Step "Generating icons (.ico / .icns) from build/appicon.png ..."
 Push-Location (Join-Path $root "build")
 try {
-  wails3 generate icons -input appicon.png -windowsfilename icon.ico
+  wails3 generate icons -input appicon.png -windowsfilename icon.ico -macfilename icons.icns
   if ($LASTEXITCODE -ne 0) { throw "icon generation failed (is wails3 on PATH?)" }
 } finally { Pop-Location }
 

@@ -1,10 +1,13 @@
 # build artifacts
 dist/
-build/
 frontend/node_modules/
 frontend/dist/
 *.exe
 backups/
+
+# third-party WebView2 bootstrapper bundled for the NSIS installer
+# (re-download from Microsoft if you need to build the installer)
+build/nsis/MicrosoftEdgeWebview2Setup.exe
 
 # real save fixtures (personal data; fetch via testdata/fetch.ps1)
 internal/sav/testdata/*.sav
@@ -12,7 +15,7 @@ internal/sav/testdata/*.sav
 # scratch debug commands
 cmd/
 
-# wails/frontend build
+# wails/frontend generated
 frontend/node_modules/
 frontend/dist/
 frontend/bindings/
