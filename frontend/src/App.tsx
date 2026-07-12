@@ -80,6 +80,10 @@ export default function AppView() {
 
   const selectWorld = async (w: World) => {
     setSelWorld(w);
+    if (!w.IsHost) {
+      setPlayers([]);
+      return;
+    }
     try {
       setPlayers((await App.ListPlayers(w.Path)) || []);
     } catch (e: any) {
@@ -97,7 +101,23 @@ export default function AppView() {
     try {
       await fn();
       flash("ok", t("common.done", label));
-      if (selWorld) await selectWorld(selWorld);
+      // Re-detect: download/import can turn a guest-only folder into a host
+      // world (Level.sav written), so IsHost must be refreshed before we
+      // reload the player list.
+      const ws = (await App.DetectWorlds()) || [];
+      setWorlds(ws);
+      const cur = selWorld;
+      if (cur) {
+        const updated = ws.find((w) => w.GUID === cur.GUID);
+        if (updated) {
+          setSelWorld(updated);
+          if (updated.IsHost) {
+            try { setPlayers((await App.ListPlayers(updated.Path)) || []); } catch { setPlayers([]); }
+          } else {
+            setPlayers([]);
+          }
+        }
+      }
     } catch (e: any) {
       flash("err", t("common.failed", label, String(e?.message || e)));
     } finally {
@@ -301,7 +321,7 @@ function WorldsView(props: {
                 className={`text-left px-3 py-2 rounded-lg border transition ${sel?.GUID === w.GUID ? "border-brand bg-brand/5" : "border-gray-200 hover:bg-gray-50"}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{w.alias || w.GUID}</span>
+                  <span className="font-medium text-sm flex items-center gap-1.5">{w.alias || w.GUID}{!w.IsHost && <span className="pill bg-gray-100 text-gray-500">{t("worlds.guest")}</span>}</span>
                   <span className="text-xs text-gray-400">{t("worlds.playerCount", w.PlayerCount)}</span>
                 </div>
                 <span className="text-xs text-gray-400">{new Date(w.ModTime).toLocaleString()}</span>
@@ -340,10 +360,11 @@ function WorldsView(props: {
           <div className="card p-4">
             <h2 className="font-semibold mb-1">{t("worlds.swapHost")}</h2>
             <p className="text-xs text-gray-500 mb-3">{t("worlds.swapHostDesc")}</p>
+            {!sel.IsHost && <p className="text-xs text-amber-600 mb-3">{t("worlds.guestHint")}</p>}
             <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" disabled={busy} onClick={props.onUpload}>{t("worlds.btnUpload")}</button>
+              <button className="btn-primary" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onUpload}>{t("worlds.btnUpload")}</button>
               <button className="btn-ghost" disabled={busy} onClick={props.onDownload}>{t("worlds.btnDownload")}</button>
-              <button className="btn-primary" disabled={busy} onClick={props.onActivate}>{t("worlds.btnActivate")}</button>
+              <button className="btn-primary" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onActivate}>{t("worlds.btnActivate")}</button>
             </div>
           </div>
 
@@ -351,7 +372,7 @@ function WorldsView(props: {
             <h2 className="font-semibold mb-1">{t("worlds.manualTransfer")}</h2>
             <p className="text-xs text-gray-500 mb-3">{t("worlds.manualDesc")}</p>
             <div className="flex flex-wrap gap-2">
-              <button className="btn-ghost" disabled={busy} onClick={props.onExport}>{t("worlds.btnExport")}</button>
+              <button className="btn-ghost" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onExport}>{t("worlds.btnExport")}</button>
               <button className="btn-ghost" disabled={busy} onClick={props.onImport}>{t("worlds.btnImport")}</button>
             </div>
           </div>

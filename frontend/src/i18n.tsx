@@ -62,6 +62,9 @@ const dict: Dict = {
   "worlds.noPlayers": { zh: "无玩家数据", en: "No player data" },
   "worlds.unnamed": { zh: "(未命名)", en: "(unnamed)" },
   "worlds.host": { zh: "房主", en: "Host" },
+  "worlds.guest": { zh: "客机", en: "Guest" },
+  "worlds.guestHint": { zh: "你当前不是此世界的房主。先点「下载最新」获取存档，再「换我当房主」即可接手。", en: "You are not the host of this world. Click Download Latest to get the save, then Take Over as Host." },
+  "worlds.guestOnly": { zh: "非房主不可用：先下载存档成为房主", en: "Guest-only: download the save first to become host" },
   "worlds.swapHost": { zh: "换房主", en: "Swap Host" },
   "worlds.swapHostDesc": {
     zh: "当前房主点「上传存档」把存档发到云端（不影响本机，你仍是房主）。接手方先「下载最新」再「换我当房主」即可成为新房主。",

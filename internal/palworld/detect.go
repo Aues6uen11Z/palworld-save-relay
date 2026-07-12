@@ -16,12 +16,13 @@ import (
 // HostUID is the GUID Palworld uses for the co-op host player slot.
 var HostUUID = sav.UUID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0} // 00000000-...-000000000001 (mixed-endian: byte 12 set)
 
-// World is a detected Palworld world save (a full host world with Level.sav).
+// World is a detected Palworld world save folder (host world with Level.sav, or guest-only with just LocalData.sav).
 type World struct {
 	GUID        string // world folder name
 	Path        string // absolute path to the world folder
 	ModTime     time.Time
-	PlayerCount int // number of files in Players/
+	PlayerCount int  // number of files in Players/
+	IsHost      bool // true when Level.sav exists (this machine hosts the world)
 }
 
 // Player is a detected player within a world.
@@ -50,10 +51,11 @@ func SaveRoot() (string, error) {
 	return filepath.Join(root, "Pal", "Saved", "SaveGames"), nil
 }
 
-// ListWorlds enumerates host world save folders under root (SteamID/WorldGUID).
-// Only worlds containing Level.sav are listed: those are full host worlds. A
-// guest-only folder (just LocalData.sav, no Level.sav) is intentionally skipped
-// because the app only deals with host uploads / downloading to become host.
+// ListWorlds enumerates world save folders under root (SteamID/WorldGUID).
+// A folder with Level.sav is a full host world (IsHost=true). A guest-only
+// folder (just LocalData.sav, no Level.sav) is also listed with IsHost=false so
+// a non-host player can still pick it to download the cloud save and take over
+// hosting. Folders with neither file are skipped (not a world folder).
 func ListWorlds(root string) ([]World, error) {
 	var worlds []World
 	steamDirs, err := os.ReadDir(root)
@@ -75,8 +77,9 @@ func ListWorlds(root string) ([]World, error) {
 				continue
 			}
 			worldPath := filepath.Join(root, steamDir.Name(), wd.Name())
-			if !fileExists(filepath.Join(worldPath, "Level.sav")) {
-				continue // skip guest-only saves (no Level.sav)
+			hasLevel := fileExists(filepath.Join(worldPath, "Level.sav"))
+			if !hasLevel && !fileExists(filepath.Join(worldPath, "LocalData.sav")) {
+				continue // not a world folder
 			}
 			info, _ := wd.Info()
 			worlds = append(worlds, World{
@@ -84,6 +87,7 @@ func ListWorlds(root string) ([]World, error) {
 				Path:        worldPath,
 				ModTime:     info.ModTime(),
 				PlayerCount: countPlayers(filepath.Join(worldPath, "Players")),
+				IsHost:      hasLevel,
 			})
 		}
 	}
