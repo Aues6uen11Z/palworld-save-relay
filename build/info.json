@@ -5,11 +5,11 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "0.1.0",
-			"CompanyName": "My Company",
-			"FileDescription": "My Product Description",
-			"LegalCopyright": "© now, My Company",
-			"ProductName": "My Product",
-			"Comments": "This is a comment"
+			"CompanyName": "palworld-save-relay",
+			"FileDescription": "幻兽帕鲁换房主",
+			"LegalCopyright": "© 2026 palworld-save-relay contributors",
+			"ProductName": "幻兽帕鲁换房主",
+			"Comments": "Palworld co-op host-swap tool"
 		}
 	}
 }
