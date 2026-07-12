@@ -16,3 +16,11 @@ body { font-family: "Inter", system-ui, -apple-system, "Segoe UI", "Microsoft Ya
   .label { @apply block text-sm font-medium text-gray-600 mb-1; }
   .pill { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
 }
+
+/* Frameless window: drag handle + non-draggable controls */
+.drag { --wails-draggable: drag; user-select: none; -webkit-user-select: none; }
+.no-drag { --wails-draggable: no-drag; }
+.win-btn { @apply w-10 h-9 inline-flex items-center justify-center text-gray-500 transition-colors; }
+.win-btn:hover { @apply bg-gray-200 text-gray-700; }
+.win-btn.close:hover { @apply bg-red-500 text-white; }
+.win-btn svg { pointer-events: none; }

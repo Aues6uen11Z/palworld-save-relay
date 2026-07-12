@@ -25,11 +25,11 @@ func main() {
 	}
 	defer logger.Close()
 	wd, _ := os.Getwd()
-	logger.Infof("=== Palworld 存档转换 starting (pid=%d go=%s os=%s/%s wd=%s) ===",
+	logger.Infof("=== 幻兽帕鲁换房主 starting (pid=%d go=%s os=%s/%s wd=%s) ===",
 		os.Getpid(), runtime.Version(), runtime.GOOS, runtime.GOARCH, wd)
 
 	app := application.New(application.Options{
-		Name:        "Palworld 存档转换",
+		Name:        "幻兽帕鲁换房主",
 		Description: "Palworld co-op save relay",
 		Services: []application.Service{
 			application.NewService(NewApp()),
@@ -39,10 +39,13 @@ func main() {
 		},
 	})
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "Palworld 存档转换",
+		Title:            "幻兽帕鲁换房主",
 		URL:              "/",
 		Width:            960,
 		Height:           680,
+		MinWidth:         720,
+		MinHeight:        480,
+		Frameless:        true,
 		BackgroundColour: application.NewRGB(245, 245, 247),
 	})
 	logger.Info("webview window created; running app loop")

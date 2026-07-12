@@ -1,4 +1,4 @@
-// Package config manages the Palworld 存档转换 application config (Qiniu creds,
+// Package config manages the 幻兽帕鲁换房主 application config (Qiniu creds,
 // world aliases, hidden saves, relay preferences) stored as JSON in AppData.
 package config
 
