@@ -12,7 +12,7 @@ import (
 	"palworld-save-relay/internal/logger"
 )
 
-//go:embed frontend/dist
+//go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 	})
-	app.NewWebviewWindowWithOptions(application.WebviewWindowOptions{
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Palworld 存档转换",
 		URL:              "/",
 		Width:            960,
