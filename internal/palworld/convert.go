@@ -57,7 +57,8 @@ var replaceFields = map[string]bool{
 	"PlayerUId":        true, // CSPM key + player SaveData + IndividualId
 	"OwnerPlayerUId":   true, // character (pal) ownership
 	"admin_player_uid": true, // guild admin
-	"player_uid":       true, // guild member
+	"player_uid":       true, // guild member / independent guild owner
+	"last_guild_name_modifier_player_uid": true, // guild name modifier
 }
 
 func uidPtr(u sav.UUID) *sav.UUID { v := u; return &v }
@@ -74,7 +75,15 @@ func deepReplace(v any, from, to sav.UUID) {
 			deepReplace(e.Value, from, to)
 		}
 	case map[string]any:
-		for _, val := range x {
+		for k, val := range x {
+			// Structured RawData (e.g. group/guild decode) stores UID fields as
+			// bare *UUID values keyed by name; replace those in-place.
+			if replaceFields[k] {
+				if g, ok := val.(*sav.UUID); ok && g.Equal(&from) {
+					x[k] = uidPtr(to)
+					continue
+				}
+			}
 			deepReplace(val, from, to)
 		}
 	case []any:
