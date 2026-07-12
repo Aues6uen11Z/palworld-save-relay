@@ -64,9 +64,9 @@ func NewQiniu(c QiniuConfig) (*Qiniu, error) {
 		client:   &http.Client{Timeout: 30 * time.Minute},
 	}
 	if c.Domain != "" {
-		q.domain = c.Domain
+		q.domain = normalizeDomain(c.Domain)
 	} else if doms, err := bm.ListBucketDomains(c.Bucket); err == nil && len(doms) > 0 {
-		q.domain = doms[0].Domain
+		q.domain = normalizeDomain(doms[0].Domain)
 	}
 	if q.domain == "" {
 		logger.Errorf("NewQiniu: bucket=%s no download domain", c.Bucket)
@@ -89,6 +89,20 @@ func zoneFor(region string) *storage.Zone {
 	default:
 		return nil
 	}
+}
+
+// normalizeDomain ensures the download domain has an http(s):// scheme; Qiniu's
+// auto-detected domain is a bare host and MakePrivateURL does not add a scheme,
+// which would yield a scheme-less URL Go's http client rejects.
+func normalizeDomain(d string) string {
+	d = strings.TrimSpace(d)
+	if d == "" {
+		return d
+	}
+	if !strings.HasPrefix(d, "http://") && !strings.HasPrefix(d, "https://") {
+		d = "https://" + d
+	}
+	return d
 }
 
 func (q *Qiniu) putToken(key string) string {
