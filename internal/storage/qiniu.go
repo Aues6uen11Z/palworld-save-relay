@@ -44,6 +44,17 @@ func NewQiniu(c QiniuConfig) (*Qiniu, error) {
 	}
 	mac := auth.New(c.AccessKey, c.SecretKey)
 	upCfg := storage.Config{UseHTTPS: true, Zone: zoneFor(c.Region)}
+	if upCfg.Zone == nil {
+		// No explicit region: auto-detect from the bucket via the UC API so
+		// list/delete (BucketManager) hit the right RS/RSF hosts. Uploads already
+		// auto-detect per-call, and downloads use the bound domain.
+		if r, err := storage.GetRegion(c.AccessKey, c.Bucket); err == nil {
+			upCfg.Region = r
+			logger.Infof("NewQiniu: auto-detected region for bucket=%s", c.Bucket)
+		} else {
+			logger.Warnf("NewQiniu: region auto-detect failed (bucket=%s): %v", c.Bucket, err)
+		}
+	}
 	bm := storage.NewBucketManager(mac, &upCfg)
 
 	q := &Qiniu{

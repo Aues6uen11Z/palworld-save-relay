@@ -358,7 +358,6 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
           <div><label className="label">AccessKey</label><input className="input" value={q.access_key || ""} onChange={(e) => set("access_key", e.target.value)} /></div>
           <div><label className="label">SecretKey</label><input className="input" type="password" value={q.secret_key || ""} onChange={(e) => set("secret_key", e.target.value)} /></div>
           <div><label className="label">Bucket</label><input className="input" value={q.bucket || ""} onChange={(e) => set("bucket", e.target.value)} /></div>
-          <div><label className="label">区域 (z0/z1/z2/na0)</label><input className="input" value={q.region || ""} onChange={(e) => set("region", e.target.value)} /></div>
           <div className="col-span-2"><label className="label">下载域名（留空自动获取）</label><input className="input" value={q.domain || ""} onChange={(e) => set("domain", e.target.value)} /></div>
         </div>
       </div>
