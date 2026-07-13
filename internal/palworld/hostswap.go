@@ -16,6 +16,35 @@ func uidFilename(u sav.UUID) string {
 	return strings.ToUpper(strings.ReplaceAll(u.String(), "-", "")) + ".sav"
 }
 
+// assertUploadReady verifies the world is in a safe state for producing a relay
+// intermediate (upload or export). It prevents the most dangerous multi-player
+// misuse: downloading without activating, playing, then uploading — which would
+// create duplicate UID entries and corrupt the cloud save for everyone.
+//
+// The world must satisfy all three conditions:
+//  1. Level.sav exists (this is a host world, not a guest-only folder).
+//  2. The host player save (HostUUID.sav) exists (the player has activated or
+//     is the original host).
+//  3. The uploader's own realUID player save does NOT exist (no stale guest
+//     copy that would duplicate on conversion). If it does, the player played
+//     without activating; they must restore from backup and activate first.
+func assertUploadReady(worldDir string, realUID sav.UUID) error {
+	levelPath := filepath.Join(worldDir, "Level.sav")
+	if _, err := os.Stat(levelPath); err != nil {
+		return fmt.Errorf("not a host world (Level.sav missing); download the latest cloud save and activate as host first")
+	}
+	playersDir := filepath.Join(worldDir, "Players")
+	hostFile := filepath.Join(playersDir, uidFilename(HostUUID))
+	if _, err := os.Stat(hostFile); err != nil {
+		return fmt.Errorf("not the host (host player save %s missing); activate as host first", filepath.Base(hostFile))
+	}
+	realFile := filepath.Join(playersDir, uidFilename(realUID))
+	if _, err := os.Stat(realFile); err == nil {
+		return fmt.Errorf("duplicate player data: both the host save and your guest save exist. This happens when you play without activating after downloading. Please restore from a backup, then activate as host before uploading")
+	}
+	return nil
+}
+
 // ConvertHost replaces fromUID -> toUID throughout the world save (Level.sav +
 // the player .sav named fromUID) and renames that player file to toUID.
 //
@@ -23,7 +52,9 @@ func uidFilename(u sav.UUID) string {
 //   - current host uploads: ConvertHost(world, HostUUID, hostRealUID)
 //   - successor hosts:      ConvertHost(world, myRealUID, HostUUID)
 //
-// Safe: backs up first, validates writes, rolls back on any error.
+// Safe: backs up first, validates writes, rolls back on any error. If the
+// rollback itself fails, the returned error names the backup path so the user
+// can recover manually.
 func ConvertHost(worldDir string, fromUID, toUID sav.UUID) error {
 	guid := filepath.Base(worldDir)
 	logger.Infof("ConvertHost: world=%s %s -> %s", guid, fromUID.String(), toUID.String())
@@ -38,8 +69,10 @@ func ConvertHost(worldDir string, fromUID, toUID sav.UUID) error {
 	}
 	if err := convertHostImpl(worldDir, fromUID, toUID); err != nil {
 		logger.Errorf("ConvertHost: world=%s impl failed, rolling back from %s: %v", guid, backupPath, err)
-		_ = restoreFromBackup(worldDir, backupPath)
-		return err
+		if rbErr := RestoreFromBackup(worldDir, backupPath); rbErr != nil {
+			return fmt.Errorf("convert failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("convert failed (rolled back from %s): %w", backupPath, err)
 	}
 	logger.Infof("ConvertHost: world=%s done (backup=%s)", guid, backupPath)
 	return nil
@@ -50,8 +83,15 @@ func ConvertHost(worldDir string, fromUID, toUID sav.UUID) error {
 // converts the host slot (0001) to realUID in the temp copy, and repacks. The
 // original worldDir is only ever read. Use this for upload/export so the local
 // save is left untouched (the uploader keeps being host).
+//
+// Before packing, assertUploadReady is called to prevent producing a corrupt
+// intermediate from a world that was played without activating after download.
 func PackIntermediate(worldDir string, realUID sav.UUID) ([]byte, error) {
 	if err := assertGameNotRunning(); err != nil {
+		return nil, err
+	}
+	if err := assertUploadReady(worldDir, realUID); err != nil {
+		logger.Errorf("PackIntermediate: world=%s upload-ready check failed: %v", filepath.Base(worldDir), err)
 		return nil, err
 	}
 	data, err := PackWorld(worldDir)
@@ -168,29 +208,95 @@ func StripToGuest(worldDir string) error {
 }
 
 // ReplaceWorld clears worldDir (keeping the game's own backup/ subdir) then
-// extracts zipBytes into it, ensuring a full clean restore rather than
-// overlaying files (which would leave stale extras behind).
+// extracts zipBytes into it. Unpacks to a temp directory first so a corrupt or
+// truncated zip never touches the live world; only after a successful unpack
+// does it clear and move files in.
 func ReplaceWorld(worldDir string, zipBytes []byte) error {
+	return replaceWorld(worldDir, zipBytes, false)
+}
+
+// ReplaceWorldKeepLocalData is like ReplaceWorld but preserves LocalData.sav
+// (personal local progress) and the game's backup/ subdir. Used for cloud
+// download / import where the incoming zip is a relay intermediate that
+// intentionally omits LocalData.sav; the local player keeps their own. Any
+// LocalData.sav present in the zip is discarded.
+func ReplaceWorldKeepLocalData(worldDir string, zipBytes []byte) error {
+	return replaceWorld(worldDir, zipBytes, true)
+}
+
+// replaceWorld is the shared implementation. When keepLocalData is true,
+// LocalData.sav in the live world is preserved and any LocalData.sav in the zip
+// is dropped so it never overwrites the local player's personal progress.
+func replaceWorld(worldDir string, zipBytes []byte, keepLocalData bool) error {
 	guid := filepath.Base(worldDir)
+	parent := filepath.Dir(worldDir)
+
+	// Unpack to a temp dir on the same volume as worldDir so os.Rename is
+	// atomic. If the zip is corrupt/truncated, this fails *before* the live
+	// world is touched.
+	tmp, err := os.MkdirTemp(parent, ".palrelay-tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	if err := UnpackWorld(zipBytes, tmp); err != nil {
+		return fmt.Errorf("unpack: %w", err)
+	}
+
+	// When preserving LocalData.sav, drop it from the temp copy so it will not
+	// overwrite the local player's personal progress.
+	if keepLocalData {
+		_ = os.Remove(filepath.Join(tmp, "LocalData.sav"))
+	}
+
+	// Ensure worldDir exists (first download to a new world folder).
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		return err
+	}
+
+	// Clear worldDir (keep the game's own backup/ subdir; keep LocalData.sav if
+	// requested). This is a full clean replace, not an overlay - stale files
+	// from a previous state are removed.
 	entries, _ := os.ReadDir(worldDir)
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() && name == "backup" {
 			continue
 		}
-		os.RemoveAll(filepath.Join(worldDir, name))
+		if keepLocalData && name == "LocalData.sav" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(worldDir, name)); err != nil {
+			return fmt.Errorf("clear %s: %w", name, err)
+		}
 	}
-	if err := UnpackWorld(zipBytes, worldDir); err != nil {
-		return fmt.Errorf("unpack: %w", err)
+
+	// Move all files from temp into worldDir (same-volume rename = atomic per
+	// file).
+	entries, _ = os.ReadDir(tmp)
+	for _, e := range entries {
+		src := filepath.Join(tmp, e.Name())
+		dst := filepath.Join(worldDir, e.Name())
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("move %s: %w", e.Name(), err)
+		}
 	}
-	logger.Infof("ReplaceWorld: world=%s replaced (%d bytes)", guid, len(zipBytes))
+
+	logger.Infof("replaceWorld: world=%s replaced (%d bytes, keepLocalData=%v)", guid, len(zipBytes), keepLocalData)
 	return nil
 }
 
-func restoreFromBackup(worldDir, backupZip string) error {
+// RestoreFromBackup reads a backup zip and fully replaces worldDir with its
+// contents (keeping the game's own backup/ subdir). Exported so the app layer
+// can roll back after a failed operation.
+func RestoreFromBackup(worldDir, backupZip string) error {
 	data, err := os.ReadFile(backupZip)
 	if err != nil {
 		return err
 	}
-	return ReplaceWorld(worldDir, data)
+	// Use KeepLocalData so the player's personal LocalData.sav is never
+	// overwritten by a backup's copy - even during auto-rollback.
+	return ReplaceWorldKeepLocalData(worldDir, data)
 }
+

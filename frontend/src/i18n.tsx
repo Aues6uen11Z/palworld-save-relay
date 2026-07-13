@@ -35,15 +35,38 @@ const dict: Dict = {
   "toast.configSaved": { zh: "配置已保存", en: "Config saved" },
   "toast.versionDownloaded": { zh: "已下载该版本", en: "Version downloaded" },
   "toast.rolledBack": { zh: "已回滚", en: "Rolled back" },
-  "toast.uploaded": { zh: "存档已上传，本机已转为访客模式（可在「备份」页回滚）", en: "Save uploaded; local save reduced to guest mode (restore from Backups to play again)" },
+  "toast.uploaded": { zh: "存档已上传", en: "Save uploaded" },
+  "toast.activated": { zh: "已切换为房主", en: "Switched to host" },
 
   "label.upload": { zh: "上传存档", en: "Upload Save" },
-  "label.downloadLatest": { zh: "下载最新", en: "Download Latest" },
-  "label.activate": { zh: "接手当房主", en: "Take Over as Host" },
+  "label.downloadActivate": { zh: "下载并成为房主", en: "Download & Become Host" },
 
   "dialog.exportTitle": { zh: "导出存档", en: "Export Save" },
   "dialog.importTitle": { zh: "导入存档", en: "Import Save" },
   "dialog.savePkg": { zh: "存档包", en: "Save Package" },
+  "dialog.uploadTitle": { zh: "上传存档", en: "Upload Save" },
+  "dialog.uploadConfirm": {
+    zh: "上传后，本机存档将从「房主」转为「房客」——仅保留个人进度数据，不能继续游玩。\n\n云端将保存最新存档供其他玩家下载。你可以随时在「备份」页回滚恢复。\n\n确定要上传吗？",
+    en: "After uploading, your local save will switch from Host to Guest — only personal progress is kept, and you cannot continue playing.\n\nThe latest save will be stored in the cloud for others to download. You can restore from the Backups page at any time.\n\nAre you sure you want to upload?",
+  },
+  "dialog.confirmUpload": { zh: "确认上传", en: "Confirm Upload" },
+  "dialog.downloadTitle": { zh: "下载并成为房主", en: "Download & Become Host" },
+  "dialog.downloadConfirm": {
+    zh: "将下载云端存档并切换为房主。\n\n当前本地存档会先自动备份（可在「备份」页回滚）。下载完成后，你可以启动游戏。\n\n确定要继续吗？",
+    en: "This will download the cloud save and switch you to host.\n\nYour current local save will be backed up first (restore from Backups page). After download, you can launch the game.\n\nAre you sure you want to continue?",
+  },
+  "dialog.downloadHostWarning": {
+    zh: "⚠️ 你当前是房主，下载将覆盖你的本地存档！\n\n",
+    en: "⚠️ You are currently the host. Downloading will overwrite your local save!\n\n",
+  },
+  "dialog.confirmDownload": { zh: "确认下载", en: "Confirm Download" },
+  "dialog.cancel": { zh: "取消", en: "Cancel" },
+  "dialog.activatedTitle": { zh: "已切换为房主", en: "You Are Now the Host" },
+  "dialog.activatedMsg": {
+    zh: "已成功下载存档并切换为房主！\n\n你现在可以启动 Palworld 游戏了。",
+    en: "Save downloaded and you are now the host!\n\nYou can now launch Palworld.",
+  },
+  "dialog.gotIt": { zh: "知道了", en: "Got It" },
 
   "warn.noCloud": {
     zh: "还没配置云服务。可到「设置」配置云同步；或直接用下方的「导出 / 导入存档」手动传输。",
@@ -64,16 +87,15 @@ const dict: Dict = {
   "worlds.unnamed": { zh: "(未命名)", en: "(unnamed)" },
   "worlds.host": { zh: "房主", en: "Host" },
   "worlds.guest": { zh: "客机", en: "Guest" },
-  "worlds.guestHint": { zh: "你当前不是此世界的房主。先点「下载最新」获取存档，再「换我当房主」即可接手。", en: "You are not the host of this world. Click Download Latest to get the save, then Take Over as Host." },
-  "worlds.guestOnly": { zh: "非房主不可用：先下载存档成为房主", en: "Guest-only: download the save first to become host" },
+  "worlds.guestHint": { zh: "你当前不是此世界的房主。点击下方「下载并成为房主」即可接手。", en: "You are not the host of this world. Click Download & Become Host below to take over." },
+  "worlds.guestOnly": { zh: "非房主不可用：先点「下载并成为房主」接手", en: "Guest-only: click Download & Become Host first" },
   "worlds.swapHost": { zh: "换房主", en: "Swap Host" },
   "worlds.swapHostDesc": {
-    zh: "当前房主点「上传存档」把存档发到云端，本机存档会转为访客模式（只剩个人数据，不能继续游玩；可在「备份」页回滚恢复）。接手方先「下载最新」再「换我当房主」即可成为新房主。",
-    en: "The current host clicks Upload Save to push the save to the cloud; the local save is then reduced to guest-only (personal data only - restore from Backups to play again). The person taking over clicks Download Latest, then Take Over as Host.",
+    zh: "当前房主点「上传存档」把存档发到云端，本机存档会转为房客模式（只剩个人数据，不能继续游玩；可在「备份」页回滚恢复）。接手方点「下载并成为房主」即可成为新房主。",
+    en: "The current host clicks Upload Save to push the save to the cloud; the local save is then reduced to guest-only (personal data only - restore from Backups to play again). The person taking over clicks Download & Become Host.",
   },
   "worlds.btnUpload": { zh: "⬆ 上传存档", en: "⬆ Upload Save" },
-  "worlds.btnDownload": { zh: "⬇ 下载最新", en: "⬇ Download Latest" },
-  "worlds.btnActivate": { zh: "🎯 换我当房主", en: "🎯 Take Over as Host" },
+  "worlds.btnDownloadActivate": { zh: "🎯 下载并成为房主", en: "🎯 Download & Become Host" },
   "worlds.manualTransfer": { zh: "手动传输", en: "Manual Transfer" },
   "worlds.manualDesc": {
     zh: "没配云服务也能用：点「导出存档」选位置存成单文件（不影响本机，你仍是房主），把文件发给对方；对方点「导入存档」选该文件即自动成为新房主。",
@@ -92,6 +114,8 @@ const dict: Dict = {
   "backups.title": { zh: "本地备份 · {0}", en: "Local Backups · {0}" },
   "backups.empty": { zh: "暂无备份。每次切换/下载/导入会自动备份。", en: "No backups yet. A backup is made automatically before every host swap / download / import." },
   "backups.restore": { zh: "回滚", en: "Restore" },
+  "backups.hostLabel": { zh: "房主存档", en: "Host Save" },
+  "backups.guestLabel": { zh: "房客存档", en: "Guest Save" },
 
   "settings.qiniu": { zh: "七牛云 Kodo", en: "Qiniu Kodo" },
   "settings.accessKey": { zh: "AccessKey", en: "AccessKey" },
@@ -152,3 +176,4 @@ export function useI18n(): I18nCtx {
   if (!ctx) throw new Error("useI18n must be used within LangProvider");
   return ctx;
 }
+

@@ -29,6 +29,11 @@ export default function AppView() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [modal, setModal] = useState<{
+    title: string; message: string;
+    buttons: { label: string; variant: "primary" | "ghost" }[];
+    onButton: (i: number) => void;
+  } | null>(null);
   const [saveRoot, setSaveRoot] = useState("");
   const [detectErr, setDetectErr] = useState("");
   const [maximised, setMaximised] = useState(false);
@@ -96,7 +101,7 @@ export default function AppView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selWorld?.Path]);
 
-  const run = async (label: string, fn: () => Promise<void>, successMsg?: string) => {
+  const run = async (label: string, fn: () => Promise<void>, successMsg?: string): Promise<boolean> => {
     setBusy(true);
     try {
       await fn();
@@ -118,13 +123,66 @@ export default function AppView() {
           }
         }
       }
+      return true;
     } catch (e: any) {
       flash("err", t("common.failed", label, String(e?.message || e)));
+      return false;
     } finally {
       setBusy(false);
     }
   };
+  const handleUpload = () => {
+    if (!selWorld) return;
+    setModal({
+      title: t("dialog.uploadTitle"),
+      message: t("dialog.uploadConfirm"),
+      buttons: [
+        { label: t("dialog.cancel"), variant: "ghost" },
+        { label: t("dialog.confirmUpload"), variant: "primary" },
+      ],
+      onButton: (i) => {
+        setModal(null);
+        if (i === 1) run(t("label.upload"), () => App.UploadWorld(selWorld!.Path), t("toast.uploaded"));
+      },
+    });
+  };
 
+  const handleDownloadActivate = (key?: string) => {
+    if (!selWorld) return;
+    let msg = t("dialog.downloadConfirm");
+    if (selWorld.IsHost) {
+      msg = t("dialog.downloadHostWarning") + msg;
+    }
+    setModal({
+      title: t("dialog.downloadTitle"),
+      message: msg,
+      buttons: [
+        { label: t("dialog.cancel"), variant: "ghost" },
+        { label: t("dialog.confirmDownload"), variant: "primary" },
+      ],
+      onButton: (i) => {
+        setModal(null);
+        if (i === 1) doDownloadActivate(key);
+      },
+    });
+  };
+
+  const doDownloadActivate = async (key?: string) => {
+    if (!selWorld) return;
+    const ok = await run(t("label.downloadActivate"), async () => {
+      if (key) await App.DownloadVersion(selWorld!.Path, key);
+      else await App.DownloadLatest(selWorld!.Path);
+      await App.ActivateHost(selWorld!.Path);
+    });
+    if (ok) {
+      setModal({
+        title: t("dialog.activatedTitle"),
+        message: t("dialog.activatedMsg"),
+        buttons: [{ label: t("dialog.gotIt"), variant: "primary" }],
+        onButton: () => setModal(null),
+      });
+    }
+  };
   const needsConfig = !cfg?.qiniu?.access_key || !cfg?.qiniu?.bucket;
 
   const titleFor = (v: View) =>
@@ -166,9 +224,8 @@ export default function AppView() {
               busy={busy}
               saveRoot={saveRoot}
               detectErr={detectErr}
-              onUpload={() => run(t("label.upload"), () => App.UploadWorld(selWorld!.Path), t("toast.uploaded"))}
-              onDownload={() => run(t("label.downloadLatest"), () => App.DownloadLatest(selWorld!.Path))}
-              onActivate={() => run(t("label.activate"), () => App.ActivateHost(selWorld!.Path))}
+              onUpload={() => handleUpload()}
+              onDownloadActivate={() => handleDownloadActivate()}
               onExport={async () => {
                 if (!selWorld) return;
                 try {
@@ -199,7 +256,7 @@ export default function AppView() {
               onAlias={(guid, alias) => { App.SetWorldMeta(guid, alias, selWorld?.hidden ?? false).then(() => refreshWorlds()).catch((e: any) => flash("err", t("err.rename", String(e?.message || e)))); }}
             />
           )}
-          {view === "cloud" && <CloudView world={selWorld} busy={busy} flash={flash} />}
+          {view === "cloud" && <CloudView world={selWorld} busy={busy} onDownloadActivate={(k) => handleDownloadActivate(k)} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} />}
           {view === "settings" && (
             <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} />
@@ -207,6 +264,20 @@ export default function AppView() {
           </div>
         </div>
       </main>
+
+      {modal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => modal.onButton(-1)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-lg mb-3">{modal.title}</h3>
+            <p className="text-sm text-gray-600 mb-5 whitespace-pre-line">{modal.message}</p>
+            <div className="flex justify-end gap-2">
+              {modal.buttons.map((b, i) => (
+                <button key={i} className={b.variant === "primary" ? "btn-primary" : "btn-ghost"} onClick={() => modal.onButton(i)}>{b.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`fixed bottom-5 right-5 px-4 py-3 rounded-lg shadow-lg text-sm text-white ${toast.kind === "ok" ? "bg-emerald-600" : "bg-red-600"}`}>
@@ -298,7 +369,7 @@ function WorldsView(props: {
   worlds: World[]; sel: World | null; onSelect: (w: World) => void; players: Player[];
   busy: boolean;
   saveRoot: string; detectErr: string;
-  onUpload: () => void; onDownload: () => void; onActivate: () => void;
+  onUpload: () => void; onDownloadActivate: () => void;
   onExport: () => void; onImport: () => void;
   onAlias: (guid: string, alias: string) => void;
 }) {
@@ -363,8 +434,7 @@ function WorldsView(props: {
             {!sel.IsHost && <p className="text-xs text-amber-600 mb-3">{t("worlds.guestHint")}</p>}
             <div className="flex flex-wrap gap-2">
               <button className="btn-primary" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onUpload}>{t("worlds.btnUpload")}</button>
-              <button className="btn-ghost" disabled={busy} onClick={props.onDownload}>{t("worlds.btnDownload")}</button>
-              <button className="btn-primary" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onActivate}>{t("worlds.btnActivate")}</button>
+              <button className="btn-primary" disabled={busy} onClick={props.onDownloadActivate}>{t("worlds.btnDownloadActivate")}</button>
             </div>
           </div>
 
@@ -382,12 +452,12 @@ function WorldsView(props: {
   );
 }
 
-function CloudView({ world, busy, flash }: { world: World | null; busy: boolean; flash: (k: "ok" | "err", m: string) => void }) {
+function CloudView({ world, busy, onDownloadActivate }: { world: World | null; busy: boolean; onDownloadActivate: (key: string) => void }) {
   const { t } = useI18n();
   const [versions, setVersions] = useState<any[]>([]);
   useEffect(() => {
     if (!world) return;
-    App.ListVersions(world.GUID).then(setVersions).catch((e) => flash("err", String(e)));
+    App.ListVersions(world.GUID).then(setVersions).catch((e) => console.error(e));
   }, [world?.GUID]);
   if (!world) return <p className="text-sm text-gray-500">{t("cloud.selectFirst")}</p>;
   return (
@@ -407,7 +477,7 @@ function CloudView({ world, busy, flash }: { world: World | null; busy: boolean;
                 </div>
                 {i === 0 ? <span className="pill bg-emerald-100 text-emerald-700">{t("cloud.latest")}</span> : (
                   <button className="btn-ghost" disabled={busy} onClick={() =>
-                    App.DownloadVersion(world.Path, v.Key).then(() => flash("ok", t("toast.versionDownloaded"))).catch((e) => flash("err", String(e)))
+                    onDownloadActivate(v.Key)
                   }>{t("cloud.download")}</button>
                 )}
               </div>
@@ -435,11 +505,11 @@ function BackupsView({ world, busy, flash }: { world: World | null; busy: boolea
           {backups.map((b) => (
             <div key={b.name} className="py-2 flex items-center justify-between">
               <div className="text-sm">
-                <div className="font-medium">{b.name}</div>
+                <div className="font-medium flex items-center gap-2">{b.name}<span className={`pill ${b.isHost ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"}`}>{t(b.isHost ? "backups.hostLabel" : "backups.guestLabel")}</span></div>
                 <div className="text-xs text-gray-400">{new Date(b.time).toLocaleString()} · {(b.size / 1024).toFixed(0)} KB</div>
               </div>
               <button className="btn-danger" disabled={busy} onClick={() =>
-                App.RestoreBackup(world.Path, b.name).then(() => { flash("ok", t("toast.rolledBack")); load(); }).catch((e) => flash("err", String(e)))
+                App.RestoreBackup(world.Path, b.name).then(() => { flash("ok", t("toast.rolledBack")); load(); }).catch((e) => flash("err", String(e?.message || e)))
               }>{t("backups.restore")}</button>
             </div>
           ))}
@@ -480,3 +550,6 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
     </div>
   );
 }
+
+
+

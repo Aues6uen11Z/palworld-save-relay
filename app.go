@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"palworld-save-relay/internal/config"
@@ -164,6 +165,9 @@ func (a *App) ActivateHost(worldPath string) error {
 		logger.Errorf("ActivateHost: world=%s convert failed: %v", guid, err)
 		return err
 	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("ActivateHost: prune backups failed: %v", err)
+	}
 	logger.Infof("ActivateHost: world=%s done", guid)
 	return nil
 }
@@ -227,13 +231,22 @@ func (a *App) UploadWorld(worldPath string) error {
 	// Upload succeeded: back up the full world, then strip to guest-only so the
 	// former host cannot keep a conflicting host copy. They can restore from
 	// the backup just made (Backups page) to play again.
-	if _, err := palworld.BackupWorld(worldPath); err != nil {
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
 		logger.Errorf("UploadWorld: world=%s post-upload backup failed: %v", guid, err)
 		return err
 	}
 	if err := palworld.StripToGuest(worldPath); err != nil {
 		logger.Errorf("UploadWorld: world=%s strip to guest failed: %v", guid, err)
-		return err
+		// Roll back from the backup we just made so the world is not left in a
+		// half-stripped state.
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return fmt.Errorf("strip to guest failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("strip to guest failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("UploadWorld: prune backups failed: %v", err)
 	}
 	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes), stripped to guest", guid, key, len(data))
 	return nil
@@ -246,8 +259,14 @@ func (a *App) DownloadLatest(worldPath string) error {
 }
 
 // DownloadVersion downloads a specific version (or the latest if key is empty).
+// The downloaded zip is validated before the local world is touched, then the
+// world is backed up and cleanly replaced (preserving LocalData.sav).
 func (a *App) DownloadVersion(worldPath, key string) error {
 	guid := filepath.Base(worldPath)
+	if err := palworld.AssertGameNotRunning(); err != nil {
+		logger.Errorf("DownloadVersion: world=%s game running: %v", guid, err)
+		return err
+	}
 	s, err := a.newStorage()
 	if err != nil {
 		return err
@@ -263,19 +282,36 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 			return fmt.Errorf("no cloud versions for world %s", guid)
 		}
 	}
-	logger.Infof("DownloadVersion: world=%s key=%s backing up", guid, key)
-	if _, err := palworld.BackupWorld(worldPath); err != nil {
-		logger.Errorf("DownloadVersion: world=%s backup failed: %v", guid, err)
-		return err
-	}
+	logger.Infof("DownloadVersion: world=%s key=%s downloading", guid, key)
 	var buf bytes.Buffer
 	if err := s.Download(context.Background(), key, &buf, nil); err != nil {
 		logger.Errorf("DownloadVersion: world=%s key=%s download failed: %v", guid, key, err)
 		return err
 	}
-	if err := palworld.UnpackWorld(buf.Bytes(), worldPath); err != nil {
-		logger.Errorf("DownloadVersion: world=%s unpack failed: %v", guid, err)
+	// Validate the downloaded zip before touching the local world so corrupt or
+	// truncated data never reaches the save folder.
+	if err := palworld.ValidateWorldZip(buf.Bytes()); err != nil {
+		logger.Errorf("DownloadVersion: world=%s key=%s validation failed: %v", guid, key, err)
+		return fmt.Errorf("downloaded save failed validation: %w", err)
+	}
+	logger.Infof("DownloadVersion: world=%s key=%s backing up", guid, key)
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
+		logger.Errorf("DownloadVersion: world=%s backup failed: %v", guid, err)
 		return err
+	}
+	// Clean replace: clear the world folder (preserving LocalData.sav and the
+	// game's backup/) then move the fresh files in. Not an overlay - stale
+	// files from a previous state are removed.
+	if err := palworld.ReplaceWorldKeepLocalData(worldPath, buf.Bytes()); err != nil {
+		logger.Errorf("DownloadVersion: world=%s replace failed: %v", guid, err)
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return fmt.Errorf("replace failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("replace failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("DownloadVersion: prune backups failed: %v", err)
 	}
 	logger.Infof("DownloadVersion: world=%s key=%s done (%d bytes)", guid, key, buf.Len())
 	return nil
@@ -345,6 +381,7 @@ type BackupRecord struct {
 	Name string    `json:"name"`
 	Size int64     `json:"size"`
 	Time time.Time `json:"time"`
+	IsHost bool      `json:"isHost"`  // true = host save, false = guest save
 }
 
 // ListBackups returns local backups for a world.
@@ -369,7 +406,8 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 			continue
 		}
 		info, _ := e.Info()
-		out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime()})
+			isHost := !strings.HasSuffix(e.Name(), "_guest.zip")
+			out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime(), IsHost: isHost})
 	}
 	logger.Infof("ListBackups: world=%s backups=%d", guid, len(out))
 	return out, nil
@@ -377,7 +415,8 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 
 // RestoreBackup restores a backup: backs up the current state (safety net),
 // then fully replaces the world folder with the backup contents (deletes
-// everything first, then extracts - not just an overlay).
+// everything first, then extracts - not just an overlay). If the replace fails,
+// the safety backup is used to roll back automatically.
 func (a *App) RestoreBackup(worldPath, name string) error {
 	guid := filepath.Base(worldPath)
 	logger.Infof("RestoreBackup: world=%s backup=%s", guid, name)
@@ -394,13 +433,20 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 		logger.Errorf("RestoreBackup: world=%s read backup failed: %v", guid, err)
 		return err
 	}
-	if _, err := palworld.BackupWorld(worldPath); err != nil {
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
 		logger.Errorf("RestoreBackup: world=%s pre-backup failed: %v", guid, err)
 		return err
 	}
-	if err := palworld.ReplaceWorld(worldPath, data); err != nil {
+	if err := palworld.ReplaceWorldKeepLocalData(worldPath, data); err != nil {
 		logger.Errorf("RestoreBackup: world=%s replace failed: %v", guid, err)
-		return err
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return fmt.Errorf("restore failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("restore failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("RestoreBackup: prune backups failed: %v", err)
 	}
 	logger.Infof("RestoreBackup: world=%s backup=%s done", guid, name)
 	return nil
@@ -430,23 +476,47 @@ func (a *App) ExportWorld(worldPath, outPath string) error {
 	return nil
 }
 
-// ImportWorld unpacks a .palrelay.zip into worldPath (after backup).
+// ImportWorld unpacks a .palrelay.zip into worldPath (after backup). The zip is
+// validated before the local world is touched, then the world is cleanly
+// replaced (preserving LocalData.sav). If the replace fails, the backup is used
+// to roll back automatically.
 func (a *App) ImportWorld(zipPath, worldPath string) error {
 	guid := filepath.Base(worldPath)
 	logger.Infof("ImportWorld: %s -> world=%s", zipPath, guid)
+	if err := palworld.AssertGameNotRunning(); err != nil {
+		logger.Errorf("ImportWorld: world=%s game running: %v", guid, err)
+		return err
+	}
 	data, err := os.ReadFile(zipPath)
 	if err != nil {
 		logger.Errorf("ImportWorld: read failed: %v", err)
 		return err
 	}
-	if _, err := palworld.BackupWorld(worldPath); err != nil {
+	// Validate the zip before touching the local world so corrupt data never
+	// reaches the save folder.
+	if err := palworld.ValidateWorldZip(data); err != nil {
+		logger.Errorf("ImportWorld: world=%s validation failed: %v", guid, err)
+		return fmt.Errorf("import save failed validation: %w", err)
+	}
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
 		logger.Errorf("ImportWorld: world=%s backup failed: %v", guid, err)
 		return err
 	}
-	if err := palworld.UnpackWorld(data, worldPath); err != nil {
-		logger.Errorf("ImportWorld: world=%s unpack failed: %v", guid, err)
-		return err
+	// Clean replace: clear the world folder (preserving LocalData.sav and the
+	// game's backup/) then move the fresh files in.
+	if err := palworld.ReplaceWorldKeepLocalData(worldPath, data); err != nil {
+		logger.Errorf("ImportWorld: world=%s replace failed: %v", guid, err)
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return fmt.Errorf("replace failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("replace failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("ImportWorld: prune backups failed: %v", err)
 	}
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
+
+
