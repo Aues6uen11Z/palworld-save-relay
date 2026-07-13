@@ -410,6 +410,7 @@ function WorldsView(props: {
               <span className="text-xs text-gray-400 font-mono break-all">{sel.GUID}</span>
             </div>
             <input className="input" value={aliasInput} placeholder={t("worlds.aliasPlaceholder")} onChange={(e) => setAliasInput(e.target.value)} onBlur={() => onAlias(sel.GUID, aliasInput)} />
+            <button className="btn-ghost text-xs mt-2" onClick={() => App.OpenWorldFolder(sel.Path).catch(() => {})}>{t("worlds.openFolder")}</button>
           </div>
 
           <div className="card p-4">
@@ -550,6 +551,8 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
     </div>
   );
 }
+
+
 
 
 

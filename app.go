@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -66,6 +67,18 @@ func (a *App) ResolvedSaveRoot() (string, error) {
 		return a.cfg.SaveRoot, nil
 	}
 	return palworld.SaveRoot()
+}
+
+// OpenWorldFolder opens the world save folder in the system file explorer.
+func (a *App) OpenWorldFolder(worldPath string) error {
+	guid := filepath.Base(worldPath)
+	logger.Infof("OpenWorldFolder: world=%s", guid)
+	cmd := exec.Command("explorer", worldPath)
+	if err := cmd.Start(); err != nil {
+		logger.Errorf("OpenWorldFolder: world=%s failed: %v", guid, err)
+		return fmt.Errorf("failed to open folder: %w", err)
+	}
+	return nil
 }
 
 // DetectWorlds lists local world saves under the configured (or auto) root.
@@ -518,5 +531,6 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
+
 
 

@@ -82,6 +82,7 @@ const dict: Dict = {
   "worlds.playerCount": { zh: "{0} 玩家", en: "{0} players" },
   "worlds.worldName": { zh: "世界名", en: "World Name" },
   "worlds.aliasPlaceholder": { zh: "存档备注", en: "Save note" },
+  "worlds.openFolder": { zh: "📂 打开存档位置", en: "📂 Open Save Folder" },
   "worlds.playersTitle": { zh: "玩家", en: "Players" },
   "worlds.noPlayers": { zh: "无玩家数据", en: "No player data" },
   "worlds.unnamed": { zh: "(未命名)", en: "(unnamed)" },
@@ -176,4 +177,5 @@ export function useI18n(): I18nCtx {
   if (!ctx) throw new Error("useI18n must be used within LangProvider");
   return ctx;
 }
+
 
