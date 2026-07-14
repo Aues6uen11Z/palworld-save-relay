@@ -99,8 +99,8 @@ const dict: Dict = {
   "worlds.btnDownloadActivate": { zh: "🎯 下载并成为房主", en: "🎯 Download & Become Host" },
   "worlds.manualTransfer": { zh: "手动传输", en: "Manual Transfer" },
   "worlds.manualDesc": {
-    zh: "没配云服务也能用：点「导出存档」选位置存成单文件（不影响本机，你仍是房主），把文件发给对方；对方点「导入存档」选该文件即自动成为新房主。",
-    en: "No cloud needed: click Export Save to save a single file (your local save stays untouched, you remain host), send it to the other person; they click Import Save and pick that file to automatically become the new host.",
+    zh: "没配云服务也能用：导出方点「导出存档」选位置存成单文件，把文件发给对方；对方点「导入存档」选该文件即自动成为新房主。",
+    en: "No cloud needed: the exporter clicks Export Save to create a single file and sends it; the recipient clicks Import Save and picks that file, automatically becoming the new host.",
   },
   "worlds.btnExport": { zh: "📤 导出存档", en: "📤 Export Save" },
   "worlds.btnImport": { zh: "📥 导入存档", en: "📥 Import Save" },
@@ -177,5 +177,7 @@ export function useI18n(): I18nCtx {
   if (!ctx) throw new Error("useI18n must be used within LangProvider");
   return ctx;
 }
+
+
 
 

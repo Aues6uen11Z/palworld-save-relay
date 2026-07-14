@@ -179,7 +179,7 @@ export default function AppView() {
         title: t("dialog.activatedTitle"),
         message: t("dialog.activatedMsg"),
         buttons: [{ label: t("dialog.gotIt"), variant: "primary" }],
-        onButton: () => setModal(null),
+        onButton: () => { setModal(null); refreshWorlds(); },
       });
     }
   };
@@ -393,7 +393,7 @@ function WorldsView(props: {
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-sm flex items-center gap-1.5">{w.alias || w.GUID}{!w.IsHost && <span className="pill bg-gray-100 text-gray-500">{t("worlds.guest")}</span>}</span>
-                  <span className="text-xs text-gray-400">{t("worlds.playerCount", w.PlayerCount)}</span>
+                  <span className="text-xs text-gray-400">{w.IsHost && t("worlds.playerCount", w.PlayerCount)}</span>
                 </div>
                 <span className="text-xs text-gray-400">{new Date(w.ModTime).toLocaleString()}</span>
               </button>
@@ -551,6 +551,7 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
     </div>
   );
 }
+
 
 
 

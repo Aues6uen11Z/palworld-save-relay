@@ -78,6 +78,25 @@ func ConvertHost(worldDir string, fromUID, toUID sav.UUID) error {
 	return nil
 }
 
+
+// ConvertHostWithoutBackup is like ConvertHost but skips the backup step. Use
+// this when the caller has already backed up the world (e.g. DownloadVersion
+// or ImportWorld backs up before calling ActivateHost). If the convert fails
+// the error is returned directly; the caller must manage rollback.
+func ConvertHostWithoutBackup(worldDir string, fromUID, toUID sav.UUID) error {
+	guid := filepath.Base(worldDir)
+	logger.Infof("ConvertHostWithoutBackup: world=%s %s -> %s", guid, fromUID.String(), toUID.String())
+	if err := assertGameNotRunning(); err != nil {
+		logger.Errorf("ConvertHostWithoutBackup: world=%s game running: %v", guid, err)
+		return err
+	}
+	if err := convertHostImpl(worldDir, fromUID, toUID); err != nil {
+		logger.Errorf("ConvertHostWithoutBackup: world=%s convert failed: %v", guid, err)
+		return fmt.Errorf("palworld: convert host: %w", err)
+	}
+	logger.Infof("ConvertHostWithoutBackup: world=%s done", guid)
+	return nil
+}
 // PackIntermediate produces the cloud/manual-transfer intermediate WITHOUT
 // modifying the original world: it packs worldDir, unpacks into a temp dir,
 // converts the host slot (0001) to realUID in the temp copy, and repacks. The

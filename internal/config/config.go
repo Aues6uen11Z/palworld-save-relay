@@ -18,7 +18,7 @@ type Config struct {
 	SaveRoot     string            `json:"save_root"`     // override save root (auto if empty)
 	WorldAliases map[string]string `json:"world_aliases"` // worldGUID -> alias
 	HiddenWorlds map[string]bool   `json:"hidden_worlds"` // worldGUID -> hidden
-	BackupKeep   int               `json:"backup_keep"`   // local backups to keep (default 5)
+	BackupKeep   int               `json:"backup_keep"`   // local backups to keep (default 15)
 	LockTTL      time.Duration     `json:"lock_ttl"`      // play-lock TTL (default 6h)
 }
 
@@ -92,7 +92,7 @@ func Defaults() *Config {
 	return &Config{
 		WorldAliases: map[string]string{},
 		HiddenWorlds: map[string]bool{},
-		BackupKeep:   5,
+		BackupKeep:   15,
 		LockTTL:      6 * time.Hour,
 	}
 }

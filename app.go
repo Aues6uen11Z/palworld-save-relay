@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sort"
 	"time"
 
 	"palworld-save-relay/internal/config"
@@ -174,7 +175,7 @@ func (a *App) ActivateHost(worldPath string) error {
 	}
 	fromUID := palworld.SteamIDToPlayerUUID(sid)
 	logger.Infof("ActivateHost: world=%s steamid=%d -> %s (real->host)", guid, sid, fromUID)
-	if err := palworld.ConvertHost(worldPath, fromUID, palworld.HostUUID); err != nil {
+	if err := palworld.ConvertHostWithoutBackup(worldPath, fromUID, palworld.HostUUID); err != nil {
 		logger.Errorf("ActivateHost: world=%s convert failed: %v", guid, err)
 		return err
 	}
@@ -208,30 +209,66 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &storage.LockManager{Store: s, TTL: a.cfg.LockTTL}, nil
 }
+// packAndStripToGuest packs the world as the transfer intermediate, backs up
+// the full world, then strips the local world to guest-only. Returns the
+// intermediate data for the caller to send to its final destination (cloud
+// upload, file export, etc.).
+func (a *App) packAndStripToGuest(worldPath string) ([]byte, error) {
+	guid := filepath.Base(worldPath)
 
-// UploadWorld packs the world as the transfer intermediate (host slot converted
-// to the local player's real UID) and uploads it. After a successful upload the
-// local world is stripped to a guest-only folder (just LocalData.sav) so the
-// former host cannot keep playing a stale, conflicting copy. A full backup is
-// made first so the host can restore via the Backups page to play again.
+	sid, err := a.LocalSteamID()
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Infof("packAndStripToGuest: world=%s packing intermediate", guid)
+	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
+	if err != nil {
+		logger.Errorf("packAndStripToGuest: world=%s pack intermediate failed: %v", guid, err)
+		return nil, err
+	}
+
+	// Back up the full world, then strip to guest-only so the former host
+	// cannot keep a conflicting host copy. They can restore from the backup
+	// (Backups page) to play again.
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
+		logger.Errorf("packAndStripToGuest: world=%s backup failed: %v", guid, err)
+		return nil, err
+	}
+	if err := palworld.StripToGuest(worldPath); err != nil {
+		logger.Errorf("packAndStripToGuest: world=%s strip to guest failed: %v", guid, err)
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return nil, fmt.Errorf("strip to guest failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return nil, fmt.Errorf("strip to guest failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("packAndStripToGuest: prune backups failed: %v", err)
+	}
+
+	logger.Infof("packAndStripToGuest: world=%s done (%d bytes)", guid, len(data))
+	return data, nil
+}
+
+// UploadWorld packs the world as the transfer intermediate and uploads it to
+// the cloud. After a successful upload the local world is stripped to guest -
+// the owner can restore from Backups to play again.
 func (a *App) UploadWorld(worldPath string) error {
 	guid := filepath.Base(worldPath)
 	s, err := a.newStorage()
 	if err != nil {
 		return err
 	}
-	sid, err := a.LocalSteamID()
+
+	data, err := a.packAndStripToGuest(worldPath)
 	if err != nil {
 		return err
 	}
-	logger.Infof("UploadWorld: world=%s packing intermediate", guid)
-	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
-	if err != nil {
-		logger.Errorf("UploadWorld: world=%s pack intermediate failed: %v", guid, err)
-		return err
-	}
+
 	up := a.cfg.Uploader
 	if up == "" {
 		up = "player"
@@ -241,30 +278,10 @@ func (a *App) UploadWorld(worldPath string) error {
 		logger.Errorf("UploadWorld: world=%s upload failed (%d bytes): %v", guid, len(data), err)
 		return err
 	}
-	// Upload succeeded: back up the full world, then strip to guest-only so the
-	// former host cannot keep a conflicting host copy. They can restore from
-	// the backup just made (Backups page) to play again.
-	backupPath, err := palworld.BackupWorld(worldPath)
-	if err != nil {
-		logger.Errorf("UploadWorld: world=%s post-upload backup failed: %v", guid, err)
-		return err
-	}
-	if err := palworld.StripToGuest(worldPath); err != nil {
-		logger.Errorf("UploadWorld: world=%s strip to guest failed: %v", guid, err)
-		// Roll back from the backup we just made so the world is not left in a
-		// half-stripped state.
-		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
-			return fmt.Errorf("strip to guest failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
-		}
-		return fmt.Errorf("strip to guest failed (rolled back from %s): %w", backupPath, err)
-	}
-	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
-		logger.Warnf("UploadWorld: prune backups failed: %v", err)
-	}
+
 	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes), stripped to guest", guid, key, len(data))
 	return nil
 }
-
 // DownloadLatest downloads the newest cloud version and writes it to worldPath
 // (after backing up the current world).
 func (a *App) DownloadLatest(worldPath string) error {
@@ -422,6 +439,7 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 			isHost := !strings.HasSuffix(e.Name(), "_guest.zip")
 			out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime(), IsHost: isHost})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
 	logger.Infof("ListBackups: world=%s backups=%d", guid, len(out))
 	return out, nil
 }
@@ -467,25 +485,23 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 
 // ---------- import/export ----------
 
-// ExportWorld packs the world as the transfer intermediate to a .palrelay.zip at
-// outPath. The local save is NOT modified (conversion happens on a temp copy).
+// ExportWorld packs the world as the transfer intermediate and writes it to a
+// .palrelay.zip at outPath. After a successful export the local world is
+// stripped to guest - identical semantics to cloud upload minus the network.
 func (a *App) ExportWorld(worldPath, outPath string) error {
 	guid := filepath.Base(worldPath)
 	logger.Infof("ExportWorld: world=%s -> %s", guid, outPath)
-	sid, err := a.LocalSteamID()
+
+	data, err := a.packAndStripToGuest(worldPath)
 	if err != nil {
 		return err
 	}
-	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
-	if err != nil {
-		logger.Errorf("ExportWorld: world=%s pack intermediate failed: %v", guid, err)
-		return err
-	}
+
 	if err := os.WriteFile(outPath, data, 0o644); err != nil {
 		logger.Errorf("ExportWorld: write %s failed: %v", outPath, err)
 		return err
 	}
-	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes)", guid, outPath, len(data))
+	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes), stripped to guest", guid, outPath, len(data))
 	return nil
 }
 
@@ -531,6 +547,7 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
+
 
 
 

@@ -56,6 +56,9 @@ func replaceOpaqueGUIDs(v any, from, to sav.UUID) {
 var replaceFields = map[string]bool{
 	"PlayerUId":        true, // CSPM key + player SaveData + IndividualId
 	"OwnerPlayerUId":   true, // character (pal) ownership
+	"guid":             true, // individual character handle (player UID)
+	"OldOwnerPlayerUIds":            true, // old pal owner history (array)
+	"LastNickNameModifierPlayerUid":  true, // last pal nickname modifier
 	"admin_player_uid": true, // guild admin
 	"player_uid":       true, // guild member / independent guild owner
 	"last_guild_name_modifier_player_uid": true, // guild name modifier
@@ -83,6 +86,11 @@ func deepReplace(v any, from, to sav.UUID) {
 					x[k] = uidPtr(to)
 					continue
 				}
+				// Value-type UUID from decoded blobs
+				if g, ok := val.(sav.UUID); ok && g.Equal(&from) {
+					x[k] = to
+					continue
+				}
 			}
 			deepReplace(val, from, to)
 		}
@@ -102,19 +110,48 @@ func deepReplace(v any, from, to sav.UUID) {
 }
 
 func replaceGUIDValue(m map[string]any, from, to sav.UUID) {
-	g, ok := m["value"].(*sav.UUID)
-	if !ok {
+	if g, ok := m["value"].(*sav.UUID); ok {
+		if g.Equal(&from) {
+			m["value"] = uidPtr(to)
+		}
 		return
 	}
-	if g.Equal(&from) {
-		m["value"] = uidPtr(to)
+	// Value-type UUID from decoded blobs (groupDecode, characterDecode, etc.)
+	if g, ok := m["value"].(sav.UUID); ok {
+		if g.Equal(&from) {
+			m["value"] = to
+		}
+		return
+	}
+	// ArrayProperty stored as map[string]any{"values": []any{...}} (e.g. OldOwnerPlayerUIds)
+	if nested, ok := m["value"].(map[string]any); ok {
+		if arr, ok := nested["values"].([]any); ok {
+			for i, item := range arr {
+				if g, ok := item.(*sav.UUID); ok && g.Equal(&from) {
+					arr[i] = uidPtr(to)
+				} else if g, ok := item.(sav.UUID); ok && g.Equal(&from) {
+					arr[i] = to
+				}
+			}
+		}
+	}
+	// Array of UUIDs from decoded blobs (e.g. OldOwnerPlayerUIds)
+	if arr, ok := m["value"].([]any); ok {
+		for i, item := range arr {
+			if g, ok := item.(*sav.UUID); ok && g.Equal(&from) {
+				arr[i] = uidPtr(to)
+			} else if g, ok := item.(sav.UUID); ok && g.Equal(&from) {
+				arr[i] = to
+			} else if wrapped, ok := item.(map[string]any); ok {
+				if g, ok := wrapped["value"].(*sav.UUID); ok && g.Equal(&from) {
+					wrapped["value"] = uidPtr(to)
+				} else if g, ok := wrapped["value"].(sav.UUID); ok && g.Equal(&from) {
+					wrapped["value"] = to
+				}
+			}
+		}
 	}
 }
-
-// ConvertGvas replaces fromUID -> toUID throughout a GVAS file (parsed fields
-// + opaque RawData blobs). This is the host-conversion primitive: the relay
-// uploads after replacing 0000...0001 -> hostRealUID, and a successor hosts by
-// replacing their realUID -> 0000...0001.
 func ConvertGvas(gf *sav.GvasFile, fromUID, toUID sav.UUID) {
 	deepReplace(gf.Properties, fromUID, toUID)
 	replaceOpaqueGUIDs(gf.Properties, fromUID, toUID)
