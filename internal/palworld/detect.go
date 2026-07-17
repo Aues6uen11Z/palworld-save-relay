@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"palworld-save-relay/internal/logger"
@@ -196,6 +197,9 @@ func playerFromEntry(e map[string]any) (Player, bool) {
 }
 
 // ListPlayers reads a world's Level.sav and returns its players.
+// If the host's CSPM key is the sentinel (0001), it resolves the real UID
+// from the Players/ directory by finding the .sav file not matched to any
+// other player.
 func ListPlayers(worldDir string) ([]Player, error) {
 	levelPath := filepath.Join(worldDir, "Level.sav")
 	data, err := os.ReadFile(levelPath)
@@ -206,7 +210,59 @@ func ListPlayers(worldDir string) ([]Player, error) {
 	if err != nil {
 		return nil, err
 	}
-	return PlayersFromLevel(gvas)
+	players, err := PlayersFromLevel(gvas)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve host's real UID from Players/ directory
+	playersDir := filepath.Join(worldDir, "Players")
+	entries, err := os.ReadDir(playersDir)
+	if err != nil {
+		return players, nil // directory missing is not fatal
+	}
+	// Collect all .sav file UIDs
+	fileUIDs := make(map[string]bool)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".sav" {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".sav")
+		fileUIDs[strings.ToLower(name)] = true
+	}
+	// Find the host's real UID: the .sav file not matched to any non-host player
+	for i := range players {
+		if !players[i].IsHost {
+			continue
+		}
+		// Collect non-host player UIDs (formatted, no dashes, upper)
+		usedUIDs := make(map[string]bool)
+		for _, p := range players {
+			if !p.IsHost {
+				usedUIDs[strings.ToUpper(strings.ReplaceAll(p.UID, "-", ""))] = true
+			}
+		}
+		// Find the .sav file not in usedUIDs
+		for uid := range fileUIDs {
+			if !usedUIDs[uid] {
+				// Convert hex filename back to formatted UUID
+				players[i].UID = formatUIDFromHex(uid)
+				break
+			}
+		}
+		break
+	}
+	return players, nil
+}
+
+// formatUIDFromHex converts a 32-char hex string (sav filename format) to
+// a formatted UUID like "00000000-0000-0000-0000-000000000001".
+func formatUIDFromHex(hex string) string {
+	if len(hex) != 32 {
+		return hex
+	}
+	return fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex[0:8], hex[8:12], hex[12:16], hex[16:20], hex[20:32])
 }
 
 // LocalSteamID returns the SteamID64 of the local player (the save folder name

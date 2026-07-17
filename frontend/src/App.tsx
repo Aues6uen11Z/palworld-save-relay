@@ -421,7 +421,7 @@ function WorldsView(props: {
               ) : (
                 players.map((p) => (
                   <div key={p.InstanceID} className="flex items-center justify-between text-sm py-1">
-                    <span>{p.NickName || t("worlds.unnamed")} <span className="text-gray-400">Lv.{p.Level}</span></span>
+                    <span>{p.NickName || t("worlds.unnamed")} <span className="text-gray-400">Lv.{p.Level}</span> <span className="text-gray-300 font-mono text-xs">{p.UID}</span></span>
                     {p.IsHost ? <span className="pill bg-indigo-100 text-indigo-700">{t("worlds.host")}</span> : null}
                   </div>
                 ))
