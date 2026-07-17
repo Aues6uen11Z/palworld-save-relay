@@ -13,12 +13,6 @@ build/nsis/MicrosoftEdgeWebview2Setup.exe
 # real save fixtures (personal data; fetch via testdata/fetch.ps1)
 internal/sav/testdata/*.sav
 
-# scratch debug commands
-cmd/
-
-# debug analysis files, zips, and temp artifacts
-debug/
-
 # wails/frontend generated
 frontend/node_modules/
 frontend/dist/
