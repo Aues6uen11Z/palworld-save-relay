@@ -257,7 +257,7 @@ export default function AppView() {
             />
           )}
           {view === "cloud" && <CloudView world={selWorld} busy={busy} onDownloadActivate={(k) => handleDownloadActivate(k)} />}
-          {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} />}
+          {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} onRestore={async () => { await refreshWorlds(); if (selWorld) { try { setPlayers((await App.ListPlayers(selWorld.Path)) || []); } catch { setPlayers([]); } } }} />}
           {view === "settings" && (
             <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} />
           )}
@@ -490,7 +490,7 @@ function CloudView({ world, busy, onDownloadActivate }: { world: World | null; b
   );
 }
 
-function BackupsView({ world, busy, flash }: { world: World | null; busy: boolean; flash: (k: "ok" | "err", m: string) => void }) {
+function BackupsView({ world, busy, flash, onRestore }: { world: World | null; busy: boolean; flash: (k: "ok" | "err", m: string) => void; onRestore: () => void }) {
   const { t } = useI18n();
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const load = () => { if (world) App.ListBackups(world.Path).then(setBackups).catch((e) => flash("err", String(e))); };
@@ -510,7 +510,7 @@ function BackupsView({ world, busy, flash }: { world: World | null; busy: boolea
                 <div className="text-xs text-gray-400">{new Date(b.time).toLocaleString()} · {(b.size / 1024).toFixed(0)} KB</div>
               </div>
               <button className="btn-danger" disabled={busy} onClick={() =>
-                App.RestoreBackup(world.Path, b.name).then(() => { flash("ok", t("toast.rolledBack")); load(); }).catch((e) => flash("err", String(e?.message || e)))
+                App.RestoreBackup(world.Path, b.name).then(() => { flash("ok", t("toast.rolledBack")); load(); onRestore(); }).catch((e) => flash("err", String(e?.message || e)))
               }>{t("backups.restore")}</button>
             </div>
           ))}
