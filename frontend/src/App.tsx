@@ -15,7 +15,7 @@ function defaultConfig(): Config {
     save_root: "",
     world_aliases: {},
     hidden_worlds: {},
-    backup_keep: 5,
+    backup_keep: 15,
     lock_ttl: 0,
   } as unknown as Config;
 }
