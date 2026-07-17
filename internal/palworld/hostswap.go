@@ -159,7 +159,88 @@ func convertHostImpl(worldDir string, fromUID, toUID sav.UUID) error {
 	if err := os.Remove(fromFile); err != nil {
 		return fmt.Errorf("remove old player save: %w", err)
 	}
+	// Fix guild-specific fields that deepReplace doesn't handle:
+	// group_name (hex string of host UID) and _u8_flag (host=1/guest=2).
+	if err := fixGuildAfterConversion(levelPath, fromUID, toUID, hints, custom); err != nil {
+		logger.Warnf("convertHostImpl: guild fix: %v", err)
+	}
 	return nil
+}
+
+// fixGuildAfterConversion fixes guild-specific fields that deepReplace cannot
+// handle because they are not UUID-typed:
+// group_name: string representation of the host's UID. Must be converted from
+// the string form of fromUID to toUID.
+// Note: _u8_flag (host=1/guest=2) is automatically handled by the guild
+// RawData encode/decode cycle — no manual fix needed.
+func fixGuildAfterConversion(levelPath string, fromUID, toUID sav.UUID, hints map[string]string, custom map[string]sav.CustomProperty) error {
+	data, err := os.ReadFile(levelPath)
+	if err != nil {
+		return err
+	}
+	gvas, hdr, err := sav.Decompress(data)
+	if err != nil {
+		return err
+	}
+	gf, err := sav.ReadGvasFile(gvas, hints, custom)
+	if err != nil {
+		return err
+	}
+
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return fmt.Errorf("worldSaveData not found")
+	}
+	gsdm := wsd["value"].(sav.PropertyList).Get("GroupSaveDataMap")
+	if gsdm == nil {
+		return fmt.Errorf("GroupSaveDataMap not found")
+	}
+
+	// Compute the UID string format used by group_name (UUID String without dashes)
+	fromUIDStr := strings.ReplaceAll(fromUID.String(), "-", "")
+	toUIDStr := strings.ReplaceAll(toUID.String(), "-", "")
+
+	groups, _ := gsdm["value"].([]map[string]any)
+	fixed := false
+	for _, g := range groups {
+		gv, _ := g["value"].(sav.PropertyList)
+		if gv == nil {
+			continue
+		}
+		graw := gv.Get("RawData")
+		if graw == nil {
+			continue
+		}
+		grv, _ := graw["value"].(map[string]any)
+		if grv == nil {
+			continue
+		}
+		gtype, _ := grv["group_type"].(string)
+		if gtype != "EPalGroupType::Guild" {
+			continue
+		}
+
+		// Fix 1: group_name = UUID string of host UID (no dashes)
+		if gn, ok := grv["group_name"].(string); ok && gn == fromUIDStr {
+			grv["group_name"] = toUIDStr
+			fixed = true
+		}
+	}
+
+	if !fixed {
+		return nil
+	}
+
+	// Write back
+	out, err := sav.Compress(gf.Write(custom), hdr)
+	if err != nil {
+		return err
+	}
+	tmp := levelPath + ".tmp"
+	if err := os.WriteFile(tmp, out, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, levelPath)
 }
 
 // convertFile reads path, replaces fromUID -> toUID, validates, and writes
