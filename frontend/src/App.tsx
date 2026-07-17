@@ -499,6 +499,7 @@ function BackupsView({ world, busy, flash, onRestore }: { world: World | null; b
   return (
     <div className="card p-4">
       <h2 className="font-semibold mb-3">{t("backups.title", world.alias || world.GUID)}</h2>
+      <button className="btn-ghost text-xs mb-3" onClick={() => App.OpenBackupFolder(world.Path).catch(() => {})}>{t("backups.openFolder")}</button>
       {backups.length === 0 ? (
         <p className="text-sm text-gray-500">{t("backups.empty")}</p>
       ) : (

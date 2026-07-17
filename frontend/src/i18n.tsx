@@ -117,6 +117,7 @@ const dict: Dict = {
   "backups.restore": { zh: "回滚", en: "Restore" },
   "backups.hostLabel": { zh: "房主存档", en: "Host Save" },
   "backups.guestLabel": { zh: "房客存档", en: "Guest Save" },
+  "backups.openFolder": { zh: "打开备份目录", en: "Open Backup Folder" },
 
   "settings.qiniu": { zh: "七牛云 Kodo", en: "Qiniu Kodo" },
   "settings.accessKey": { zh: "AccessKey", en: "AccessKey" },

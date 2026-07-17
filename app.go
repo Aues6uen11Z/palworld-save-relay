@@ -444,6 +444,23 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 	return out, nil
 }
 
+// OpenBackupFolder opens the backup directory for a world in the system file explorer.
+func (a *App) OpenBackupFolder(worldPath string) error {
+	guid := filepath.Base(worldPath)
+	dir, err := palworld.BackupDir()
+	if err != nil {
+		return err
+	}
+	bdir := filepath.Join(dir, guid)
+	logger.Infof("OpenBackupFolder: world=%s dir=%s", guid, bdir)
+	cmd := exec.Command("explorer", bdir)
+	if err := cmd.Start(); err != nil {
+		logger.Errorf("OpenBackupFolder: world=%s failed: %v", guid, err)
+		return fmt.Errorf("failed to open folder: %w", err)
+	}
+	return nil
+}
+
 // RestoreBackup restores a backup: backs up the current state (safety net),
 // then fully replaces the world folder with the backup contents (deletes
 // everything first, then extracts - not just an overlay). If the replace fails,
