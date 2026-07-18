@@ -199,10 +199,11 @@ func convertFile(path, outPath string, from, to sav.UUID, hints map[string]strin
 	return os.Rename(tmp, outPath)
 }
 
-// StripToGuest removes all world data except LocalData.sav (and the game's own
-// backup/ subdir), turning a host world into a guest-only folder. Used after
-// uploading so the former host cannot keep a conflicting host copy; they can
-// restore from a backup to play again. Asserts the game is not running.
+// StripToGuest removes all world data except LocalData.sav, turning a host
+// world into a guest-only folder. Used after uploading so the former host
+// cannot keep a conflicting host copy; they can restore from a tool backup
+// to play again. The game's own backup/ subdir is also removed, otherwise the
+// game UI shows an empty save for this world. Asserts the game is not running.
 func StripToGuest(worldDir string) error {
 	if err := assertGameNotRunning(); err != nil {
 		return err
@@ -215,9 +216,6 @@ func StripToGuest(worldDir string) error {
 	for _, e := range entries {
 		name := e.Name()
 		if name == "LocalData.sav" {
-			continue
-		}
-		if e.IsDir() && name == "backup" {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(worldDir, name)); err != nil {
@@ -282,9 +280,6 @@ func replaceWorld(worldDir string, zipBytes []byte, keepLocalData bool) error {
 	entries, _ := os.ReadDir(worldDir)
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() && name == "backup" {
-			continue
-		}
 		if keepLocalData && name == "LocalData.sav" {
 			continue
 		}
@@ -514,3 +509,4 @@ func moveHostPlayerSlot(gf *sav.GvasFile, fromUID, toUID sav.UUID, hostInst *sav
 		}
 	}
 }
+
