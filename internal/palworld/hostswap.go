@@ -146,7 +146,7 @@ func convertHostImpl(worldDir string, fromUID, toUID sav.UUID) error {
 
 	// Convert Level.sav in place.
 	levelPath := filepath.Join(worldDir, "Level.sav")
-	if err := convertFile(levelPath, levelPath, fromUID, toUID, hints, custom); err != nil {
+	if err := convertHostLevel(levelPath, fromUID, toUID, hints, custom); err != nil {
 		return fmt.Errorf("Level.sav: %w", err)
 	}
 	// Convert the player save fromUID.sav -> toUID.sav.
@@ -159,89 +159,10 @@ func convertHostImpl(worldDir string, fromUID, toUID sav.UUID) error {
 	if err := os.Remove(fromFile); err != nil {
 		return fmt.Errorf("remove old player save: %w", err)
 	}
-	// Fix guild-specific fields that deepReplace doesn't handle:
-	// group_name (hex string of host UID) and _u8_flag (host=1/guest=2).
-	if err := fixGuildAfterConversion(levelPath, fromUID, toUID, hints, custom); err != nil {
-		logger.Warnf("convertHostImpl: guild fix: %v", err)
-	}
 	return nil
 }
 
-// fixGuildAfterConversion fixes guild-specific fields that deepReplace cannot
-// handle because they are not UUID-typed:
-// group_name: string representation of the host's UID. Must be converted from
-// the string form of fromUID to toUID.
-// Note: _u8_flag (host=1/guest=2) is automatically handled by the guild
-// RawData encode/decode cycle — no manual fix needed.
-func fixGuildAfterConversion(levelPath string, fromUID, toUID sav.UUID, hints map[string]string, custom map[string]sav.CustomProperty) error {
-	data, err := os.ReadFile(levelPath)
-	if err != nil {
-		return err
-	}
-	gvas, hdr, err := sav.Decompress(data)
-	if err != nil {
-		return err
-	}
-	gf, err := sav.ReadGvasFile(gvas, hints, custom)
-	if err != nil {
-		return err
-	}
 
-	wsd := gf.Properties.Get("worldSaveData")
-	if wsd == nil {
-		return fmt.Errorf("worldSaveData not found")
-	}
-	gsdm := wsd["value"].(sav.PropertyList).Get("GroupSaveDataMap")
-	if gsdm == nil {
-		return fmt.Errorf("GroupSaveDataMap not found")
-	}
-
-	// Compute the UID string format used by group_name (UUID String without dashes)
-	fromUIDStr := strings.ReplaceAll(fromUID.String(), "-", "")
-	toUIDStr := strings.ReplaceAll(toUID.String(), "-", "")
-
-	groups, _ := gsdm["value"].([]map[string]any)
-	fixed := false
-	for _, g := range groups {
-		gv, _ := g["value"].(sav.PropertyList)
-		if gv == nil {
-			continue
-		}
-		graw := gv.Get("RawData")
-		if graw == nil {
-			continue
-		}
-		grv, _ := graw["value"].(map[string]any)
-		if grv == nil {
-			continue
-		}
-		gtype, _ := grv["group_type"].(string)
-		if gtype != "EPalGroupType::Guild" {
-			continue
-		}
-
-		// Fix 1: group_name = UUID string of host UID (no dashes)
-		if gn, ok := grv["group_name"].(string); ok && gn == fromUIDStr {
-			grv["group_name"] = toUIDStr
-			fixed = true
-		}
-	}
-
-	if !fixed {
-		return nil
-	}
-
-	// Write back
-	out, err := sav.Compress(gf.Write(custom), hdr)
-	if err != nil {
-		return err
-	}
-	tmp := levelPath + ".tmp"
-	if err := os.WriteFile(tmp, out, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, levelPath)
-}
 
 // convertFile reads path, replaces fromUID -> toUID, validates, and writes
 // atomically to outPath.
@@ -400,3 +321,196 @@ func RestoreFromBackup(worldDir, backupZip string) error {
 	return ReplaceWorldKeepLocalData(worldDir, data)
 }
 
+
+
+
+
+
+
+
+// convertHostLevel converts the host slot in Level.sav for a host step-down or
+// step-up. Unlike a uniform UID swap (ConvertGvas), it moves ONLY the host
+// player's identity - the CSPM player entry key, the ICH handle guid, guild
+// membership, and pal ownership (OwnerPlayerUId) - from fromUID to toUID.
+//
+// World data stays put: every pal's CSPM bucket (key.PlayerUId), every ICH
+// handle guid, and all opaque RawData blobs remain on whatever slot they're
+// already on. In a host world all pals live under the host sentinel slot
+// (0001), so after a step-down (0001 -> realUID) the pals stay on 0001 and the
+// next host inherits them - matching an official host world, instead of
+// dragging the whole world's pals into the old host's personal bucket.
+func convertHostLevel(levelPath string, fromUID, toUID sav.UUID, hints map[string]string, custom map[string]sav.CustomProperty) error {
+	data, err := os.ReadFile(levelPath)
+	if err != nil {
+		return err
+	}
+	gvas, hdr, err := sav.Decompress(data)
+	if err != nil {
+		return err
+	}
+	gf, err := sav.ReadGvasFile(gvas, hints, custom)
+	if err != nil {
+		return err
+	}
+
+	hostInst := findHostPlayerInstance(gf, fromUID)
+	if hostInst == nil {
+		logger.Warnf("convertHostLevel: host player entry for %s not found; moving identity only via deepReplace", fromUID.String())
+	}
+
+	// 1. Host identity + pal ownership, but NOT pal CSPM buckets or ICH guids.
+	deepReplaceFields(gf.Properties, fromUID, toUID, hostIdentityFields)
+
+	// 2. Move the host player's own CSPM key and ICH handle guid.
+	moveHostPlayerSlot(gf, fromUID, toUID, hostInst)
+
+	// (pal CSPM keys and opaque blobs are deliberately left untouched.)
+
+	out, err := sav.Compress(gf.Write(custom), hdr)
+	if err != nil {
+		return err
+	}
+	// Validate: re-decompress + re-parse before committing.
+	check, _, err := sav.Decompress(out)
+	if err != nil {
+		return fmt.Errorf("validation decompress: %w", err)
+	}
+	if _, err := sav.ReadGvasFile(check, hints, custom); err != nil {
+		return fmt.Errorf("validation parse: %w", err)
+	}
+	tmp := levelPath + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, levelPath)
+}
+
+// findHostPlayerInstance returns the InstanceId of the host player's CSPM entry
+// (the IsPlayer=true entry whose key.PlayerUId == hostUID), or nil if not found.
+func findHostPlayerInstance(gf *sav.GvasFile, hostUID sav.UUID) *sav.UUID {
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return nil
+	}
+	cspm := wsd["value"].(sav.PropertyList).Get("CharacterSaveParameterMap")
+	if cspm == nil {
+		return nil
+	}
+	entries, _ := cspm["value"].([]map[string]any)
+	for _, e := range entries {
+		key, _ := e["key"].(sav.PropertyList)
+		if key == nil {
+			continue
+		}
+		p := key.Get("PlayerUId")
+		if p == nil {
+			continue
+		}
+		puid, ok := p["value"].(*sav.UUID)
+		if !ok || puid == nil || *puid != hostUID {
+			continue
+		}
+		if !cspmEntryIsPlayer(e) {
+			continue
+		}
+		inst := key.Get("InstanceId")
+		if inst == nil {
+			return nil
+		}
+		if iv, ok := inst["value"].(*sav.UUID); ok && iv != nil {
+			return iv
+		}
+		return nil
+	}
+	return nil
+}
+
+// cspmEntryIsPlayer reports whether a CSPM entry's SaveParameter has IsPlayer=true.
+func cspmEntryIsPlayer(e map[string]any) bool {
+	val, _ := e["value"].(sav.PropertyList)
+	if val == nil {
+		return false
+	}
+	raw := val.Get("RawData")
+	if raw == nil {
+		return false
+	}
+	rv, _ := raw["value"].(map[string]any)
+	obj, _ := rv["object"].(sav.PropertyList)
+	sp := obj.Get("SaveParameter")
+	inner, _ := sp["value"].(sav.PropertyList)
+	ip := inner.Get("IsPlayer")
+	if ip == nil {
+		return false
+	}
+	b, _ := ip["value"].(bool)
+	return b
+}
+
+// moveHostPlayerSlot moves the host player's CSPM key.PlayerUId and ICH handle
+// guid from fromUID to toUID (identified by the host player's InstanceId). Pal
+// entries are left on their existing slot.
+func moveHostPlayerSlot(gf *sav.GvasFile, fromUID, toUID sav.UUID, hostInst *sav.UUID) {
+	if hostInst == nil {
+		return
+	}
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return
+	}
+	pl := wsd["value"].(sav.PropertyList)
+
+	// CSPM key: the host player's entry.
+	if cspm := pl.Get("CharacterSaveParameterMap"); cspm != nil {
+		entries, _ := cspm["value"].([]map[string]any)
+		for _, e := range entries {
+			key, _ := e["key"].(sav.PropertyList)
+			if key == nil {
+				continue
+			}
+			inst := key.Get("InstanceId")
+			if inst == nil {
+				continue
+			}
+			iv, ok := inst["value"].(*sav.UUID)
+			if !ok || iv == nil || !iv.Equal(hostInst) {
+				continue
+			}
+			puid := key.Get("PlayerUId")
+			if puid == nil {
+				continue
+			}
+			if pv, ok := puid["value"].(*sav.UUID); ok && pv != nil && *pv == fromUID {
+				puid["value"] = uidPtr(toUID)
+			}
+		}
+	}
+
+	// ICH guid: the host player's handle, in every guild.
+	if gsdm := pl.Get("GroupSaveDataMap"); gsdm != nil {
+		groups, _ := gsdm["value"].([]map[string]any)
+		for _, g := range groups {
+			gv, _ := g["value"].(sav.PropertyList)
+			raw := gv.Get("RawData")
+			inner, _ := raw["value"].(map[string]any)
+			if inner == nil {
+				continue
+			}
+			ich, _ := inner["individual_character_handle_ids"].([]any)
+			for _, h := range ich {
+				m, _ := h.(map[string]any)
+				if m == nil {
+					continue
+				}
+			inst, _ := m["instance_id"].(*sav.UUID)
+				if inst == nil || !inst.Equal(hostInst) {
+					continue
+				}
+				guid, _ := m["guid"].(*sav.UUID)
+				if guid != nil && *guid == fromUID {
+					m["guid"] = uidPtr(toUID)
+				}
+			}
+		}
+	}
+}

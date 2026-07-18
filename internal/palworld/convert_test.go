@@ -2,6 +2,8 @@ package palworld
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"palworld-save-relay/internal/sav"
@@ -49,3 +51,81 @@ func TestConvertGvas_Reversible(t *testing.T) {
 		})
 	}
 }
+
+
+// TestConvertHostLevel_PalsStayOnHostSlot verifies the refactored host
+// step-down moves ONLY the host player's identity off the sentinel slot; every
+// pal's CSPM bucket and ICH guid stays on 0001 so the next host inherits them
+// (matching an official host world), instead of dragging all pals into the old
+// host's personal bucket.
+func TestConvertHostLevel_PalsStayOnHostSlot(t *testing.T) {
+	levelData := readSavFixtureX(t, "level_plm.sav")
+	if len(levelData) == 0 {
+		return
+	}
+	dir := t.TempDir()
+	levelPath := filepath.Join(dir, "Level.sav")
+	if err := os.WriteFile(levelPath, levelData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hints, custom := sav.PalWorldConfig()
+
+	// Snapshot the CSPM bucket distribution before conversion.
+	before := cspmBucketDist(t, levelPath, hints, custom)
+	hostBefore := before[HostUUID.String()]
+
+	if err := convertHostLevel(levelPath, HostUUID, fakeUID, hints, custom); err != nil {
+		t.Fatalf("convertHostLevel: %v", err)
+	}
+	after := cspmBucketDist(t, levelPath, hints, custom)
+
+	// Host player (1 entry) moved 0001 -> fakeUID.
+	if after[fakeUID.String()] != 1 {
+		t.Errorf("host player count under fakeUID = %d, want 1", after[fakeUID.String()])
+	}
+	if after[HostUUID.String()] != hostBefore-1 {
+		t.Errorf("0001 bucket = %d, want %d (only the host player should have left)",
+			after[HostUUID.String()], hostBefore-1)
+	}
+	// No bucket other than 0001/fakeUID changed (pals did not scatter).
+	for uid, n := range before {
+		if uid == HostUUID.String() {
+			continue
+		}
+		if after[uid] != n {
+			t.Errorf("bucket %s changed: %d -> %d (pals should not move)", uid, n, after[uid])
+		}
+	}
+	t.Logf("before 0001=%d after 0001=%d fakeUID=%d", hostBefore, after[HostUUID.String()], after[fakeUID.String()])
+}
+
+func cspmBucketDist(t *testing.T, path string, hints map[string]string, custom map[string]sav.CustomProperty) map[string]int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gvas, _, err := sav.Decompress(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gf, err := sav.ReadGvasFile(gvas, hints, custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsd := gf.Properties.Get("worldSaveData")
+	pl := wsd["value"].(sav.PropertyList)
+	cspm := pl.Get("CharacterSaveParameterMap")
+	entries, _ := cspm["value"].([]map[string]any)
+	dist := map[string]int{}
+	for _, e := range entries {
+		key, _ := e["key"].(sav.PropertyList)
+		if p := key.Get("PlayerUId"); p != nil {
+			if g, ok := p["value"].(*sav.UUID); ok && g != nil {
+				dist[g.String()]++
+			}
+		}
+	}
+	return dist
+}
+

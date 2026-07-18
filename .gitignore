@@ -23,3 +23,5 @@ bin/
 docs/superpowers/
 PRD.md
 *.exe~
+cmd/
+debug/

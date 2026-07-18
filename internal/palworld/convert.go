@@ -54,14 +54,27 @@ func replaceOpaqueGUIDs(v any, from, to sav.UUID) {
 
 // replaceFields are the parsed UID-bearing fields deepReplace rewrites.
 var replaceFields = map[string]bool{
-	"PlayerUId":        true, // CSPM key + player SaveData + IndividualId
-	"OwnerPlayerUId":   true, // character (pal) ownership
-	"guid":             true, // individual character handle (player UID)
-	"OldOwnerPlayerUIds":            true, // old pal owner history (array)
-	"LastNickNameModifierPlayerUid":  true, // last pal nickname modifier
-	"admin_player_uid": true, // guild admin
-	"player_uid":       true, // guild member / independent guild owner
+	"PlayerUId":                          true, // CSPM key + player SaveData + IndividualId
+	"OwnerPlayerUId":                     true, // character (pal) ownership
+	"guid":                               true, // individual character handle (player UID)
+	"OldOwnerPlayerUIds":                 true, // old pal owner history (array)
+	"LastNickNameModifierPlayerUid":      true, // last pal nickname modifier
+	"admin_player_uid":                   true, // guild admin
+	"player_uid":                         true, // guild member / independent guild owner
 	"last_guild_name_modifier_player_uid": true, // guild name modifier
+}
+
+// hostIdentityFields is the restricted field set used by a host step-down: it
+// rewrites the host player's identity and pal ownership, but NOT the pal CSPM
+// bucket (PlayerUId) or ICH guid (guid) - those stay on the host sentinel slot
+// so the next host inherits the world's pals, matching an official host world.
+var hostIdentityFields = map[string]bool{
+	"OwnerPlayerUId":                      true,
+	"OldOwnerPlayerUIds":                  true,
+	"LastNickNameModifierPlayerUid":       true,
+	"admin_player_uid":                    true,
+	"player_uid":                          true,
+	"last_guild_name_modifier_player_uid": true,
 }
 
 func uidPtr(u sav.UUID) *sav.UUID { v := u; return &v }
@@ -69,19 +82,26 @@ func uidPtr(u sav.UUID) *sav.UUID { v := u; return &v }
 // deepReplace recurses the parsed property tree, rewriting named UID fields
 // from -> to (by value). InstanceId / struct_id / id are left untouched.
 func deepReplace(v any, from, to sav.UUID) {
+	deepReplaceFields(v, from, to, replaceFields)
+}
+
+// deepReplaceFields is deepReplace with a caller-supplied field set, so a host
+// step-down can rewrite only identity/ownership fields and leave world data
+// (pal CSPM buckets, ICH guids) on the host slot.
+func deepReplaceFields(v any, from, to sav.UUID, fields map[string]bool) {
 	switch x := v.(type) {
 	case sav.PropertyList:
 		for _, e := range x {
-			if replaceFields[e.Name] {
+			if fields[e.Name] {
 				replaceGUIDValue(e.Value, from, to)
 			}
-			deepReplace(e.Value, from, to)
+			deepReplaceFields(e.Value, from, to, fields)
 		}
 	case map[string]any:
 		for k, val := range x {
 			// Structured RawData (e.g. group/guild decode) stores UID fields as
 			// bare *UUID values keyed by name; replace those in-place.
-			if replaceFields[k] {
+			if fields[k] {
 				if g, ok := val.(*sav.UUID); ok && g.Equal(&from) {
 					x[k] = uidPtr(to)
 					continue
@@ -92,19 +112,19 @@ func deepReplace(v any, from, to sav.UUID) {
 					continue
 				}
 			}
-			deepReplace(val, from, to)
+			deepReplaceFields(val, from, to, fields)
 		}
 	case []any:
 		for _, item := range x {
-			deepReplace(item, from, to)
+			deepReplaceFields(item, from, to, fields)
 		}
 	case []map[string]any:
 		for _, item := range x {
-			deepReplace(item, from, to)
+			deepReplaceFields(item, from, to, fields)
 		}
 	case []sav.PropertyList:
 		for _, item := range x {
-			deepReplace(item, from, to)
+			deepReplaceFields(item, from, to, fields)
 		}
 	}
 }
@@ -152,6 +172,9 @@ func replaceGUIDValue(m map[string]any, from, to sav.UUID) {
 		}
 	}
 }
+
+// ConvertGvas does a uniform from -> to UID swap across the whole GVAS tree
+// (named fields + opaque blobs). Used for player .sav files (personal data).
 func ConvertGvas(gf *sav.GvasFile, fromUID, toUID sav.UUID) {
 	deepReplace(gf.Properties, fromUID, toUID)
 	replaceOpaqueGUIDs(gf.Properties, fromUID, toUID)

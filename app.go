@@ -282,6 +282,23 @@ func (a *App) UploadWorld(worldPath string) error {
 	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes), stripped to guest", guid, key, len(data))
 	return nil
 }
+// repairDownloadedWorld runs the auto-repair on a freshly downloaded/imported
+// intermediate. It is best-effort: a failure is logged but does not undo the
+// download, since the save is already on disk and a partial repair is still
+// better than none. A healthy save is a no-op (cheap ICH completeness check).
+func (a *App) repairDownloadedWorld(worldPath, guid string) {
+	rep, err := palworld.RepairIntermediate(worldPath)
+	if err != nil {
+		logger.Warnf("repairDownloadedWorld: world=%s failed: %v (save left as-is)", guid, err)
+		return
+	}
+	if rep.RebuiltICH || rep.ConsolidatedPals || rep.ConvertedOpaque {
+		logger.Infof("repairDownloadedWorld: world=%s oldHost=%s fixed: ich=%v consolidatePals=%v opaque=%v",
+			guid, rep.HostUID, rep.RebuiltICH, rep.ConsolidatedPals, rep.ConvertedOpaque)
+	} else {
+		logger.Infof("repairDownloadedWorld: world=%s healthy, no repair needed", guid)
+	}
+}
 // DownloadLatest downloads the newest cloud version and writes it to worldPath
 // (after backing up the current world).
 func (a *App) DownloadLatest(worldPath string) error {
@@ -340,6 +357,7 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 		}
 		return fmt.Errorf("replace failed (rolled back from %s): %w", backupPath, err)
 	}
+	a.repairDownloadedWorld(worldPath, guid)
 	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
 		logger.Warnf("DownloadVersion: prune backups failed: %v", err)
 	}
@@ -558,12 +576,18 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 		}
 		return fmt.Errorf("replace failed (rolled back from %s): %w", backupPath, err)
 	}
+	a.repairDownloadedWorld(worldPath, guid)
 	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
 		logger.Warnf("ImportWorld: prune backups failed: %v", err)
 	}
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
+
+
+
+
+
 
 
 
