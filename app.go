@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sort"
+	"strings"
 	"time"
 
 	"palworld-save-relay/internal/config"
@@ -95,6 +95,33 @@ func (a *App) DetectWorlds() ([]World, error) {
 		return nil, err
 	}
 	logger.Infof("DetectWorlds: root=%s worlds=%d", root, len(ws))
+	// Filter by configured SteamID if set. If it matches no save folder
+	// (stale: account removed or save moved), clear it so the user isn't
+	// left with an empty world list and no way to recover.
+	if a.cfg.SteamID != "" {
+		matched := false
+		for _, w := range ws {
+			if w.SteamID == a.cfg.SteamID {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			filtered := make([]palworld.World, 0, len(ws))
+			for _, w := range ws {
+				if w.SteamID == a.cfg.SteamID {
+					filtered = append(filtered, w)
+				}
+			}
+			ws = filtered
+		} else {
+			logger.Infof("DetectWorlds: configured steam_id=%s matches no save folder; clearing", a.cfg.SteamID)
+			a.cfg.SteamID = ""
+			if err := config.Save(a.cfg); err != nil {
+				logger.Errorf("DetectWorlds: clear stale steam_id failed: %v", err)
+			}
+		}
+	}
 	out := make([]World, 0, len(ws))
 	configDirty := false
 	for _, w := range ws {
@@ -121,7 +148,8 @@ func (a *App) DetectWorlds() ([]World, error) {
 	if configDirty {
 		config.Save(a.cfg)
 	}
-	return out, nil}
+	return out, nil
+}
 
 // SetWorldMeta sets a world's alias and hidden flag (persisted).
 func (a *App) SetWorldMeta(guid, alias string, hidden bool) error {
@@ -160,7 +188,18 @@ func (a *App) ListPlayers(worldPath string) ([]palworld.Player, error) {
 	return players, nil
 }
 
-// LocalSteamID returns the local player's SteamID64 (from the save folder).
+// ListSteamAccounts returns Steam accounts that have Palworld save data on
+// this machine, with display names from Steam loginusers.vdf.
+func (a *App) ListSteamAccounts() ([]palworld.SteamAccount, error) {
+	root, err := a.ResolvedSaveRoot()
+	if err != nil {
+		return nil, err
+	}
+	return palworld.ListSteamAccounts(root)
+}
+
+// LocalSteamID returns the local player SteamID64. Uses the configured
+// SteamID if set; otherwise auto-detects the first SteamID folder.
 func (a *App) LocalSteamID() (uint64, error) {
 	root := a.cfg.SaveRoot
 	if root == "" {
@@ -170,6 +209,14 @@ func (a *App) LocalSteamID() (uint64, error) {
 			return 0, err
 		}
 		root = r
+	}
+	// Use configured SteamID if set.
+	if a.cfg.SteamID != "" {
+		var sid uint64
+		if _, err := fmt.Sscanf(a.cfg.SteamID, "%d", &sid); err == nil && sid > 0 {
+			logger.Infof("LocalSteamID: configured steamid=%d", sid)
+			return sid, nil
+		}
 	}
 	sid, err := palworld.LocalSteamID(root)
 	if err != nil {
@@ -229,6 +276,7 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 
 	return &storage.LockManager{Store: s, TTL: a.cfg.LockTTL}, nil
 }
+
 // packAndStripToGuest packs the world as the transfer intermediate, backs up
 // the full world, then strips the local world to guest-only. Returns the
 // intermediate data for the caller to send to its final destination (cloud
@@ -299,6 +347,7 @@ func (a *App) UploadWorld(worldPath string) error {
 	logger.Infof("UploadWorld: world=%s uploaded key=%s (%d bytes), stripped to guest", guid, key, len(data))
 	return nil
 }
+
 // repairDownloadedWorld runs the auto-repair on a freshly downloaded/imported
 // intermediate. It is best-effort: a failure is logged but does not undo the
 // download, since the save is already on disk and a partial repair is still
@@ -316,6 +365,7 @@ func (a *App) repairDownloadedWorld(worldPath, guid string) {
 		logger.Infof("repairDownloadedWorld: world=%s healthy, no repair needed", guid)
 	}
 }
+
 // DownloadLatest downloads the newest cloud version and writes it to worldPath
 // (after backing up the current world).
 func (a *App) DownloadLatest(worldPath string) error {
@@ -443,10 +493,10 @@ func (a *App) ReleaseLock(worldGUID string) error {
 
 // BackupRecord is a local backup entry.
 type BackupRecord struct {
-	Name string    `json:"name"`
-	Size int64     `json:"size"`
-	Time time.Time `json:"time"`
-	IsHost bool      `json:"isHost"`  // true = host save, false = guest save
+	Name   string    `json:"name"`
+	Size   int64     `json:"size"`
+	Time   time.Time `json:"time"`
+	IsHost bool      `json:"isHost"` // true = host save, false = guest save
 }
 
 // ListBackups returns local backups for a world.
@@ -471,8 +521,8 @@ func (a *App) ListBackups(worldPath string) ([]BackupRecord, error) {
 			continue
 		}
 		info, _ := e.Info()
-			isHost := !strings.HasSuffix(e.Name(), "_guest.zip")
-			out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime(), IsHost: isHost})
+		isHost := !strings.HasSuffix(e.Name(), "_guest.zip")
+		out = append(out, BackupRecord{Name: e.Name(), Size: info.Size(), Time: info.ModTime(), IsHost: isHost})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
 	logger.Infof("ListBackups: world=%s backups=%d", guid, len(out))
@@ -600,13 +650,3 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
-
-
-
-
-
-
-
-
-
-

@@ -74,6 +74,8 @@ const dict: Dict = {
   },
 
   "worlds.selectWorld": { zh: "选择世界", en: "Select World" },
+  "worlds.selectAccount": { zh: "Steam 账号", en: "Steam Account" },
+  "worlds.accountAuto": { zh: "自动检测", en: "Auto-detect" },
   "worlds.notFound": { zh: "未检测到 Palworld 存档。", en: "No Palworld save detected." },
   "worlds.saveDir": { zh: "存档目录：", en: "Save directory: " },
   "worlds.saveDirNA": { zh: "(未获取)", en: "(not available)" },
@@ -178,7 +180,3 @@ export function useI18n(): I18nCtx {
   if (!ctx) throw new Error("useI18n must be used within LangProvider");
   return ctx;
 }
-
-
-
-

@@ -21,9 +21,10 @@ type World struct {
 	GUID        string // world folder name
 	Path        string // absolute path to the world folder
 	ModTime     time.Time
-	PlayerCount int  // number of files in Players/
+	PlayerCount int    // number of files in Players/
 	IsHost      bool   // true when Level.sav exists (this machine hosts the world)
 	WorldName   string // in-game world name from LevelMeta.sav (" if unavailable, e.g. guest-only)
+	SteamID     string // SteamID64 folder name (which Steam account owns this world)
 }
 
 // Player is a detected player within a world.
@@ -90,6 +91,7 @@ func ListWorlds(root string) ([]World, error) {
 				PlayerCount: countPlayers(filepath.Join(worldPath, "Players")),
 				IsHost:      hasLevel,
 				WorldName:   worldNameFromLevelMeta(worldPath),
+				SteamID:     steamDir.Name(),
 			})
 		}
 	}
@@ -255,7 +257,6 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-
 
 // worldNameFromLevelMeta reads the in-game world name from LevelMeta.sav's
 // SaveData.WorldName. Returns "" if LevelMeta.sav is missing or unparseable

@@ -16,6 +16,7 @@ type Config struct {
 	Qiniu        Qiniu             `json:"qiniu"`
 	Uploader     string            `json:"uploader"`      // default uploader name
 	SaveRoot     string            `json:"save_root"`     // override save root (auto if empty)
+	SteamID      string            `json:"steam_id"`      // selected Steam account (empty = auto-detect first)
 	WorldAliases map[string]string `json:"world_aliases"` // worldGUID -> alias
 	WorldNames   map[string]string `json:"world_names"`   // worldGUID -> cached in-game world name (survives host->guest strip)
 	HiddenWorlds map[string]bool   `json:"hidden_worlds"` // worldGUID -> hidden
@@ -102,4 +103,3 @@ func Defaults() *Config {
 type errStr string
 
 func (e errStr) Error() string { return string(e) }
-

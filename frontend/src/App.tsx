@@ -3,6 +3,7 @@ import { Dialogs, Window } from "@wailsio/runtime";
 import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
+import type { SteamAccount } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
 import { useI18n, type Lang } from "./i18n";
 
@@ -35,6 +36,7 @@ export default function AppView() {
     onButton: (i: number) => void;
   } | null>(null);
   const [saveRoot, setSaveRoot] = useState("");
+  const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
   const [detectErr, setDetectErr] = useState("");
   const [maximised, setMaximised] = useState(false);
 
@@ -48,12 +50,15 @@ export default function AppView() {
     try {
       const ws = await App.DetectWorlds();
       setWorlds(ws || []);
+      // DetectWorlds may self-heal a stale steam_id; re-sync config.
+      try { const c = await App.GetConfig(); if (c) setCfg(c); } catch {}
       if (ws && ws.length && !selWorld) setSelWorld(ws[0]);
     } catch (e: any) {
       setDetectErr(String(e?.message || e));
       flash("err", t("err.detectWorlds", String(e?.message || e)));
     }
     try { setSaveRoot(await App.ResolvedSaveRoot()); } catch {}
+    try { setSteamAccounts(await App.ListSteamAccounts()); } catch {}
   }, [selWorld, t]);
 
   useEffect(() => {
@@ -224,6 +229,15 @@ export default function AppView() {
               busy={busy}
               saveRoot={saveRoot}
               detectErr={detectErr}
+              steamAccounts={steamAccounts}
+              selectedSteamId={cfg?.steam_id || ""}
+
+              onSelectSteamId={async (id) => {
+                const newCfg = { ...cfg, steam_id: id };
+                setCfg(newCfg);
+                try { await App.SaveConfig(newCfg); } catch {}
+                refreshWorlds();
+              }}
               onUpload={() => handleUpload()}
               onDownloadActivate={() => handleDownloadActivate()}
               onExport={async () => {
@@ -369,18 +383,41 @@ function WorldsView(props: {
   worlds: World[]; sel: World | null; onSelect: (w: World) => void; players: Player[];
   busy: boolean;
   saveRoot: string; detectErr: string;
+  steamAccounts: SteamAccount[];
+  selectedSteamId: string;
+  onSelectSteamId: (id: string) => void;
   onUpload: () => void; onDownloadActivate: () => void;
   onExport: () => void; onImport: () => void;
   onAlias: (guid: string, alias: string) => void;
 }) {
   const { t } = useI18n();
-  const { worlds, sel, onSelect, players, busy, saveRoot, detectErr, onAlias } = props;
+  const { worlds, sel, onSelect, players, busy, saveRoot, detectErr, steamAccounts, selectedSteamId, onSelectSteamId, onAlias } = props;
   const [aliasInput, setAliasInput] = useState(sel?.alias || "");
   useEffect(() => { setAliasInput(sel?.alias || ""); }, [sel?.GUID, sel?.alias]);
   return (
     <div className="space-y-5">
       <div className="card p-4">
         <h2 className="font-semibold mb-3">{t("worlds.selectWorld")}</h2>
+        {steamAccounts.length > 1 && (
+          <>
+            <div className="mb-3">
+              <label className="label mb-1">{t("worlds.selectAccount")}</label>
+              <select
+                className="input"
+                value={selectedSteamId}
+                onChange={(e) => onSelectSteamId(e.target.value)}
+              >
+                <option value="">{t("worlds.accountAuto")}</option>
+                {steamAccounts.map((a) => (
+                  <option key={a.steamId} value={a.steamId}>
+                    {a.personaName || a.accountName || a.steamId}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <hr className="border-gray-200 mb-3" />
+          </>
+        )}
         {worlds.length === 0 ? (
           <div className="text-sm text-gray-500"><p>{t("worlds.notFound")}</p><p className="mt-1">{t("worlds.saveDir")}<span className="font-mono text-gray-700 break-all">{saveRoot || t("worlds.saveDirNA")}</span></p>{detectErr && <p className="mt-1 text-red-500">{t("worlds.detectErr", detectErr)}</p>}<p className="mt-1">{t("worlds.fixPath")}</p></div>
         ) : (
@@ -551,12 +588,3 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
