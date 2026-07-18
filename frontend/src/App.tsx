@@ -199,7 +199,7 @@ export default function AppView() {
           <div>
             <h1 className="text-lg font-semibold">{titleFor(view)}</h1>
             {selWorld && view !== "settings" && (
-              <p className="text-xs text-gray-500">{selWorld.alias || selWorld.GUID}</p>
+              <p className="text-xs text-gray-500">{selWorld.alias || selWorld.WorldName || selWorld.GUID}</p>
             )}
           </div>
           <WindowControls maximised={maximised} />
@@ -392,7 +392,7 @@ function WorldsView(props: {
                 className={`text-left px-3 py-2 rounded-lg border transition ${sel?.GUID === w.GUID ? "border-brand bg-brand/5" : "border-gray-200 hover:bg-gray-50"}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm flex items-center gap-1.5">{w.alias || w.GUID}{!w.IsHost && <span className="pill bg-gray-100 text-gray-500">{t("worlds.guest")}</span>}</span>
+                  <span className="font-medium text-sm flex items-center gap-1.5">{w.alias || w.WorldName || w.GUID}{!w.IsHost && <span className="pill bg-gray-100 text-gray-500">{t("worlds.guest")}</span>}</span>
                   <span className="text-xs text-gray-400">{w.IsHost && t("worlds.playerCount", w.PlayerCount)}</span>
                 </div>
                 <span className="text-xs text-gray-400">{new Date(w.ModTime).toLocaleString()}</span>
@@ -406,7 +406,7 @@ function WorldsView(props: {
         <>
           <div className="card p-4">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold">{t("worlds.worldName")}</h2>
+              <h2 className="font-semibold">{sel.alias || sel.WorldName || t("worlds.worldName")}</h2>
               <span className="text-xs text-gray-400 font-mono break-all">{sel.GUID}</span>
             </div>
             <input className="input" value={aliasInput} placeholder={t("worlds.aliasPlaceholder")} onChange={(e) => setAliasInput(e.target.value)} onBlur={() => onAlias(sel.GUID, aliasInput)} />
@@ -463,7 +463,7 @@ function CloudView({ world, busy, onDownloadActivate }: { world: World | null; b
   if (!world) return <p className="text-sm text-gray-500">{t("cloud.selectFirst")}</p>;
   return (
     <div className="card p-4">
-      <h2 className="font-semibold mb-3">{t("cloud.versions", world.alias || world.GUID)}</h2>
+      <h2 className="font-semibold mb-3">{t("cloud.versions", world.alias || world.WorldName || world.GUID)}</h2>
       {versions.length === 0 ? (
         <p className="text-sm text-gray-500">{t("cloud.empty")}</p>
       ) : (
@@ -498,7 +498,7 @@ function BackupsView({ world, busy, flash, onRestore }: { world: World | null; b
   if (!world) return <p className="text-sm text-gray-500">{t("backups.selectFirst")}</p>;
   return (
     <div className="card p-4">
-      <h2 className="font-semibold mb-3">{t("backups.title", world.alias || world.GUID)}</h2>
+      <h2 className="font-semibold mb-3">{t("backups.title", world.alias || world.WorldName || world.GUID)}</h2>
       <button className="btn-ghost text-xs mb-3" onClick={() => App.OpenBackupFolder(world.Path).catch(() => {})}>{t("backups.openFolder")}</button>
       {backups.length === 0 ? (
         <p className="text-sm text-gray-500">{t("backups.empty")}</p>
@@ -551,6 +551,9 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
     </div>
   );
 }
+
+
+
 
 
 

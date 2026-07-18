@@ -22,7 +22,8 @@ type World struct {
 	Path        string // absolute path to the world folder
 	ModTime     time.Time
 	PlayerCount int  // number of files in Players/
-	IsHost      bool // true when Level.sav exists (this machine hosts the world)
+	IsHost      bool   // true when Level.sav exists (this machine hosts the world)
+	WorldName   string // in-game world name from LevelMeta.sav (" if unavailable, e.g. guest-only)
 }
 
 // Player is a detected player within a world.
@@ -88,6 +89,7 @@ func ListWorlds(root string) ([]World, error) {
 				ModTime:     info.ModTime(),
 				PlayerCount: countPlayers(filepath.Join(worldPath, "Players")),
 				IsHost:      hasLevel,
+				WorldName:   worldNameFromLevelMeta(worldPath),
 			})
 		}
 	}
@@ -252,4 +254,40 @@ func LocalSteamID(root string) (uint64, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+
+// worldNameFromLevelMeta reads the in-game world name from LevelMeta.sav's
+// SaveData.WorldName. Returns "" if LevelMeta.sav is missing or unparseable
+// (e.g. guest-only worlds stripped to LocalData.sav). Best-effort: any error
+// or panic is swallowed so the world list still loads.
+func worldNameFromLevelMeta(worldDir string) (name string) {
+	defer func() { recover() }()
+	data, err := os.ReadFile(filepath.Join(worldDir, "LevelMeta.sav"))
+	if err != nil {
+		return ""
+	}
+	gvas, _, err := sav.Decompress(data)
+	if err != nil {
+		return ""
+	}
+	hints, custom := sav.PalWorldConfig()
+	gf, err := sav.ReadGvasFile(gvas, hints, custom)
+	if err != nil {
+		return ""
+	}
+	sd := gf.Properties.Get("SaveData")
+	if sd == nil {
+		return ""
+	}
+	pl, ok := sd["value"].(sav.PropertyList)
+	if !ok {
+		return ""
+	}
+	wn := pl.Get("WorldName")
+	if wn == nil {
+		return ""
+	}
+	name, _ = wn["value"].(string)
+	return name
 }

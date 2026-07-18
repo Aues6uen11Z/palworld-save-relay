@@ -96,15 +96,32 @@ func (a *App) DetectWorlds() ([]World, error) {
 	}
 	logger.Infof("DetectWorlds: root=%s worlds=%d", root, len(ws))
 	out := make([]World, 0, len(ws))
+	configDirty := false
 	for _, w := range ws {
+		// Cache the in-game world name from LevelMeta.sav so it survives a
+		// host->guest strip (LevelMeta.sav is removed; the cached name persists).
+		if w.WorldName != "" {
+			if a.cfg.WorldNames[w.GUID] != w.WorldName {
+				if a.cfg.WorldNames == nil {
+					a.cfg.WorldNames = map[string]string{}
+				}
+				a.cfg.WorldNames[w.GUID] = w.WorldName
+				configDirty = true
+			}
+		} else if a.cfg.WorldNames != nil {
+			// Guest-only world: use the cached name from when it was a host.
+			w.WorldName = a.cfg.WorldNames[w.GUID]
+		}
 		out = append(out, World{
 			World:  w,
 			Alias:  a.cfg.WorldAliases[w.GUID],
 			Hidden: a.cfg.HiddenWorlds[w.GUID],
 		})
 	}
-	return out, nil
-}
+	if configDirty {
+		config.Save(a.cfg)
+	}
+	return out, nil}
 
 // SetWorldMeta sets a world's alias and hidden flag (persisted).
 func (a *App) SetWorldMeta(guid, alias string, hidden bool) error {
@@ -583,6 +600,7 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	logger.Infof("ImportWorld: %s -> world=%s done (%d bytes)", zipPath, guid, len(data))
 	return nil
 }
+
 
 
 
