@@ -359,7 +359,21 @@ func convertHostLevel(levelPath string, fromUID, toUID sav.UUID, hints map[strin
 	// 2. Move the host player's own CSPM key and ICH handle guid.
 	moveHostPlayerSlot(gf, fromUID, toUID, hostInst)
 
-	// (pal CSPM keys and opaque blobs are deliberately left untouched.)
+	// 3. On a host step-up (a guest activating as host: fromUID is not the host
+	//    sentinel), remap that player's builder UID in map objects so their
+	//    guest-built facilities follow them onto the host slot. Without this the
+	//    facilities keep the old guest UID, which becomes orphaned after the
+	//    player-save rename and the game can no longer resolve the builder (no
+	//    inspect name, can't initiate work). Skipped for step-down (host slot ->
+	//    realUID) where facilities stay on the host slot for the next host to
+	//    inherit, matching an official host world.
+	if fromUID != HostUUID {
+		if _, err := RemapMapObjectBuilders(gf, hints, custom, fromUID, toUID); err != nil {
+			return fmt.Errorf("remap mapobject builders: %w", err)
+		}
+	}
+
+	// (pal CSPM keys and other opaque blobs are deliberately left untouched.)
 
 	out, err := sav.Compress(gf.Write(custom), hdr)
 	if err != nil {

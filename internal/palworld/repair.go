@@ -13,7 +13,8 @@ type RepairReport struct {
 	HostUID          string // detected old-host UID whose bucket the pals were scattered into
 	RebuiltICH       bool   // a guild's ICH was truncated -> rebuilt from CSPM by group_id
 	ConsolidatedPals bool   // pals were moved back onto the host sentinel slot (0001)
-	ConvertedOpaque  bool   // old-host UIDs in opaque blobs moved back to the host slot
+	ConvertedOpaque         bool   // old-host UIDs in opaque blobs moved back to the host slot
+	MapObjectBuildersRepaired int   // facility builder UIDs reset to host (orphaned/corrupted)
 }
 
 // RepairIntermediate repairs a cloud/imported intermediate that may have been
@@ -31,6 +32,9 @@ type RepairReport struct {
 //     ownership) back to the host slot.
 //   - Rebuilds each truncated guild ICH from the (now consolidated) CSPM, per
 //     group_id - the actual fix for the "can't lift base pal" bug.
+//
+// Additionally (always, not gated on ICH state): repairs facility builder
+// UIDs in MapObjectSaveData that no longer resolve to a current player.
 //
 // group_name is deliberately not touched (verified unrelated to the lift bug).
 func RepairIntermediate(worldDir string) (*RepairReport, error) {
@@ -50,51 +54,66 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 	}
 
 	rep := &RepairReport{}
+
+	// Always repair facility builder UIDs. Legacy host swaps (and the current
+	// step-up path before its own fix) leave builder references pointing at
+	// orphaned former-player UIDs or corrupted mashup values; the game then
+	// can't resolve the "built by" name or grant work permission. This is
+	// independent of guild ICH state, so it runs even when the ICH is intact.
+	builderN, err := RepairMapObjectBuilders(gf, hints, custom)
+	if err != nil {
+		return nil, fmt.Errorf("repair: mapobject builders: %w", err)
+	}
+	rep.MapObjectBuildersRepaired = builderN
+
 	guilds := findAllGuilds(gf)
-	if len(guilds) == 0 {
-		return rep, nil
-	}
 
-	// Only act when a guild's ICH is incomplete (the early-tool truncation
-	// marker). A clean save (ICH complete) is left untouched.
+	// Act on guild ICH only when a guild's ICH is incomplete (the early-tool
+	// truncation marker).
 	needFix := false
-	for _, inner := range guilds {
-		ich, _ := inner["individual_character_handle_ids"].([]any)
-		if len(ich) != len(buildICHForGroup(gf, inner)) {
-			needFix = true
-			break
+	if len(guilds) > 0 {
+		for _, inner := range guilds {
+			ich, _ := inner["individual_character_handle_ids"].([]any)
+			if len(ich) != len(buildICHForGroup(gf, inner)) {
+				needFix = true
+				break
+			}
 		}
 	}
-	if !needFix {
+
+	// Nothing to do: leave the save untouched.
+	if !needFix && builderN == 0 {
 		return rep, nil
 	}
 
-	// Detect the old host: the non-sentinel UID holding the most CSPM entries.
-	// In a legacy intermediate the world's pals were dragged into this bucket.
-	oldHost, oldHostCount := detectHostUID(gf)
+	if needFix {
+		// Detect the old host: the non-sentinel UID holding the most CSPM entries.
+		// In a legacy intermediate the world's pals were dragged into this bucket.
+		oldHost, oldHostCount := detectHostUID(gf)
 
-	// 1. Consolidate every pal onto the host sentinel slot (0001). Player
-	//    entries (IsPlayer=true) stay on their own UIDs.
-	rep.ConsolidatedPals = consolidatePalsToHostSlot(gf)
+		// 1. Consolidate every pal onto the host sentinel slot (0001). Player
+		//    entries (IsPlayer=true) stay on their own UIDs.
+		rep.ConsolidatedPals = consolidatePalsToHostSlot(gf)
 
-	// 2. Move the old host's objects back to the host slot in opaque blobs.
-	//    Only when a real old host was detected (count > 1: more than a lone
-	//    guest player entry), so a clean save's guest UIDs aren't touched.
-	if oldHost != nil && *oldHost != HostUUID && oldHostCount > 1 {
-		replaceOpaqueGUIDs(gf.Properties, *oldHost, HostUUID)
-		rep.ConvertedOpaque = true
-		rep.HostUID = oldHost.String()
-	}
-
-	// 3. Rebuild each truncated guild ICH from the consolidated CSPM (per
-	//    group_id). Pals are now under 0001, players under their own UIDs.
-	for _, inner := range guilds {
-		ich, _ := inner["individual_character_handle_ids"].([]any)
-		if len(ich) == len(buildICHForGroup(gf, inner)) {
-			continue
+		// 2. Move the old host's objects back to the host slot in opaque blobs.
+		//    Only when a real old host was detected (count > 1: more than a lone
+		//    guest player entry), so a clean save's guest UIDs aren't touched.
+		if oldHost != nil && *oldHost != HostUUID && oldHostCount > 1 {
+			replaceOpaqueGUIDs(gf.Properties, *oldHost, HostUUID)
+			rep.ConvertedOpaque = true
+			rep.HostUID = oldHost.String()
 		}
-		inner["individual_character_handle_ids"] = buildICHForGroup(gf, inner)
-		rep.RebuiltICH = true
+
+		// 3. Rebuild each truncated guild ICH from the consolidated CSPM (per
+		//    group_id). Pals are now under 0001, players under their own UIDs.
+		for _, inner := range guilds {
+			ich, _ := inner["individual_character_handle_ids"].([]any)
+			if len(ich) == len(buildICHForGroup(gf, inner)) {
+				continue
+			}
+			inner["individual_character_handle_ids"] = buildICHForGroup(gf, inner)
+			rep.RebuiltICH = true
+		}
 	}
 
 	out, err := sav.Compress(gf.Write(custom), hdr)
