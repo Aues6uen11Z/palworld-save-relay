@@ -10,11 +10,12 @@ import (
 
 // RepairReport summarizes what RepairIntermediate changed.
 type RepairReport struct {
-	HostUID          string // detected old-host UID whose bucket the pals were scattered into
-	RebuiltICH       bool   // a guild's ICH was truncated -> rebuilt from CSPM by group_id
-	ConsolidatedPals bool   // pals were moved back onto the host sentinel slot (0001)
-	ConvertedOpaque         bool   // old-host UIDs in opaque blobs moved back to the host slot
-	MapObjectBuildersRepaired int   // facility builder UIDs reset to host (orphaned/corrupted)
+	HostUID                   string // detected old-host UID whose bucket the pals were scattered into
+	RebuiltICH                bool   // a guild's ICH was truncated -> rebuilt from CSPM by group_id
+	ConsolidatedPals          bool   // pals were moved back onto the host sentinel slot (0001)
+	ConvertedOpaque           bool   // old-host UIDs in opaque blobs moved back to the host slot
+	MapObjectBuildersRepaired int    // facility builder UIDs reset to host (orphaned/corrupted)
+	ContainerSlotsFixed       int    // palbox slot PlayerUIds resynced to host after pal consolidation
 }
 
 // RepairIntermediate repairs a cloud/imported intermediate that may have been
@@ -66,6 +67,10 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 	}
 	rep.MapObjectBuildersRepaired = builderN
 
+	// Resync palbox slot PlayerUIds to the host slot. Idempotent; also catches
+	// stale slots left by a previous consolidation that didn't fix them.
+	rep.ContainerSlotsFixed = fixContainerSlotPlayerUids(gf)
+
 	guilds := findAllGuilds(gf)
 
 	// Act on guild ICH only when a guild's ICH is incomplete (the early-tool
@@ -82,7 +87,7 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 	}
 
 	// Nothing to do: leave the save untouched.
-	if !needFix && builderN == 0 {
+	if !needFix && builderN == 0 && rep.ContainerSlotsFixed == 0 {
 		return rep, nil
 	}
 
@@ -94,6 +99,11 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 		// 1. Consolidate every pal onto the host sentinel slot (0001). Player
 		//    entries (IsPlayer=true) stay on their own UIDs.
 		rep.ConsolidatedPals = consolidatePalsToHostSlot(gf)
+
+		// Re-sync palbox slot PlayerUIds now that every pal's CSPM key is on the
+		// host slot. Without this, slots referencing a non-old-host player UID
+		// go stale and the game drops those pals from the terminal.
+		rep.ContainerSlotsFixed += fixContainerSlotPlayerUids(gf)
 
 		// 2. Move the old host's objects back to the host slot in opaque blobs.
 		//    Only when a real old host was detected (count > 1: more than a lone
@@ -124,6 +134,72 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 		return nil, fmt.Errorf("repair: write: %w", err)
 	}
 	return rep, nil
+}
+
+// fixContainerSlotPlayerUids resyncs the PlayerUId reference inside every
+// CharacterContainerSaveData slot's RawData to the host sentinel (0001) when it
+// still points at a non-host player UID.
+//
+// consolidatePalsToHostSlot moves every pal's CSPM key onto the host slot
+// (0001), but the palbox/Otomo slot RawData (an opaque blob) still carries the
+// OLD bucket's PlayerUId. replaceOpaqueGUIDs only fixes the *detected old
+// host*'s UID, so slots referencing any *other* player's UID become stale -
+// the game then can't resolve (PlayerUId, InstanceId) and silently drops the
+// pal from the terminal. This function fixes ALL non-host, non-zero slot
+// PlayerUIds to match the consolidated CSPM key. Idempotent.
+func fixContainerSlotPlayerUids(gf *sav.GvasFile) int {
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return 0
+	}
+	pl, ok := wsd["value"].(sav.PropertyList)
+	if !ok {
+		return 0
+	}
+	ccsd := pl.Get("CharacterContainerSaveData")
+	if ccsd == nil {
+		return 0
+	}
+	entries, _ := ccsd["value"].([]map[string]any)
+	var zero sav.UUID
+	fixed := 0
+	for _, e := range entries {
+		val, _ := e["value"].(sav.PropertyList)
+		if val == nil {
+			continue
+		}
+		slots := val.Get("Slots")
+		if slots == nil {
+			continue
+		}
+		mv, _ := slots["value"].(map[string]any)
+		if mv == nil {
+			continue
+		}
+		arr, _ := mv["values"].([]any)
+		for _, s := range arr {
+			slot, ok := s.(sav.PropertyList)
+			if !ok {
+				continue
+			}
+			rd := slot.Get("RawData")
+			if rd == nil {
+				continue
+			}
+			b, ok := rd["value"].([]byte)
+			if !ok || len(b) < 20 {
+				continue
+			}
+			var uid sav.UUID
+			copy(uid[:], b[4:20])
+			if uid == zero || uid == HostUUID {
+				continue
+			}
+			copy(b[4:20], HostUUID[:])
+			fixed++
+		}
+	}
+	return fixed
 }
 
 // findAllGuilds returns the parsed inner maps of every EPalGroupType::Guild.
@@ -325,6 +401,3 @@ func writeLevelAtomic(path string, data []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
-
-
-
