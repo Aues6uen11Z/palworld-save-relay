@@ -74,38 +74,33 @@ try {
     Write-Output "  version.txt created"
 }
 
-# 7. Update Gitee release assets.
-Write-Output "`n=== Gitee: update release assets ==="
+# 7. Recreate Gitee release (delete old + create new, since Gitee API doesn't support deleting individual assets).
+Write-Output "`n=== Gitee: recreate release ==="
+# Find and delete old release.
 $r = Invoke-WebRequest -Uri "$giteeApi/repos/$owner/$repo/releases" -Method GET -Body @{access_token=$token} -UseBasicParsing -TimeoutSec 10
 $releases = $r.Content | ConvertFrom-Json
-$latest = $releases | Where-Object { $_.tag_name -eq "latest" } | Select-Object -First 1
-if (-not $latest) { throw "Gitee 'latest' release not found" }
-$releaseId = $latest.id
-Write-Output "  release id=$releaseId"
-
-# Delete old assets (except archives).
-foreach ($asset in $latest.assets) {
-    if ($asset.name -match "\.(zip|tar\.gz)$") { continue }
-    try {
-        Invoke-WebRequest -Uri "$giteeApi/repos/$owner/$repo/releases/$releaseId/attach_files/$($asset.id)?access_token=$token" -Method DELETE -UseBasicParsing -TimeoutSec 10 | Out-Null
-        Write-Output "  deleted old $($asset.name)"
-    } catch {}
+$oldRelease = $releases | Where-Object { $_.tag_name -eq "latest" } | Select-Object -First 1
+if ($oldRelease) {
+    Invoke-WebRequest -Uri "$giteeApi/repos/$owner/$repo/releases/$($oldRelease.id)?access_token=$token" -Method DELETE -UseBasicParsing -TimeoutSec 10 | Out-Null
+    Write-Output "  old release deleted"
 }
-
-# Upload new assets.
-foreach ($file in @("version.txt", $binary)) {
+# Delete and recreate 'latest' tag.
+git push gitee :refs/tags/latest 2>$null
+git tag -d latest 2>$null
+git tag latest HEAD
+git push gitee latest --force 2>$null
+git tag -d latest 2>$null
+# Create new release.
+$body = "access_token=$token&tag_name=latest&name=Latest&body=$Version&target_commitish=master"
+$r = Invoke-WebRequest -Uri "$giteeApi/repos/$owner/$repo/releases" -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing -TimeoutSec 15
+$releaseId = ($r.Content | ConvertFrom-Json).id
+Write-Output "  new release id=$releaseId"
+# Upload assets.
+foreach ($file in @("version.txt", $binary, "release-note.txt")) {
     if (Test-Path $file) {
         $result = curl.exe -s -X POST "$giteeApi/repos/$owner/$repo/releases/$releaseId/attach_files" -F "access_token=$token" -F "file=@$file" 2>&1
-        if ($result -match '"id"') {
-            Write-Output "  uploaded $file"
-        } else {
-            Write-Output "  FAILED $file`: $result"
-        }
+        Write-Output "  $(if ($result -match '"id"') {'uploaded'} else {'FAILED'}) $file"
     }
-}
-if ($Notes -and (Test-Path "release-note.txt")) {
-    $result = curl.exe -s -X POST "$giteeApi/repos/$owner/$repo/releases/$releaseId/attach_files" -F "access_token=$token" -F "file=@release-note.txt" 2>&1
-    Write-Output "  uploaded release-note.txt"
 }
 
 Write-Output "`n=== Done! ==="
