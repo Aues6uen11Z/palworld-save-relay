@@ -25,27 +25,29 @@ type UpdateInfo struct {
 }
 
 const (
-	giteeBase  = "https://gitee.com/aues6uen11z/palworld-save-relay/releases/download/latest"
-	githubBase = "https://github.com/Aues6uen11Z/palworld-save-relay/releases/latest/download"
-	binaryName = "palworld-save-relay.exe"
+	// Version check: raw files in the repo (no release needed).
+	giteeVersionURL  = "https://gitee.com/aues6uen11z/palworld-save-relay/raw/master/version.txt"
+	githubVersionURL = "https://raw.githubusercontent.com/Aues6uen11Z/palworld-save-relay/main/version.txt"
+	// Binary download: version-specific release tags.
+	giteeBinaryBase  = "https://gitee.com/aues6uen11z/palworld-save-relay/releases/download"
+	githubBinaryBase = "https://github.com/Aues6uen11Z/palworld-save-relay/releases/download"
+	binaryName       = "palworld-save-relay.exe"
 )
 
-// fetchVersion tries Gitee first (fast for China), falls back to GitHub.
-func fetchVersion() (version, source, base string, err error) {
-	// Try Gitee with a short timeout.
-	if v, e := fetchURL(giteeBase+"/version.txt", 5*time.Second); e == nil {
+// fetchVersion tries Gitee raw file first (fast for China), falls back to GitHub.
+func fetchVersion() (version, source string, err error) {
+	if v, e := fetchURL(giteeVersionURL, 5*time.Second); e == nil {
 		ver := strings.TrimSpace(v)
 		logger.Infof("updater: Gitee version=%s", ver)
-		return ver, "gitee", giteeBase, nil
+		return ver, "gitee", nil
 	}
-	// Fallback to GitHub.
-	v, e := fetchURL(githubBase+"/version.txt", 15*time.Second)
+	v, e := fetchURL(githubVersionURL, 15*time.Second)
 	if e != nil {
-		return "", "", "", fmt.Errorf("无法连接更新服务器（Gitee 和 GitHub 均不可达）: %w", e)
+		return "", "", fmt.Errorf("无法连接更新服务器（Gitee 和 GitHub 均不可达）: %w", e)
 	}
 	ver := strings.TrimSpace(v)
 	logger.Infof("updater: GitHub version=%s", ver)
-	return ver, "github", githubBase, nil
+	return ver, "github", nil
 }
 
 // fetchURL fetches a text URL with a timeout.
@@ -68,24 +70,25 @@ func fetchURL(url string, timeout time.Duration) (string, error) {
 
 // CheckForUpdate compares the current version with the latest release.
 func CheckForUpdate(currentVersion string) (*UpdateInfo, error) {
-	latestVer, source, base, err := fetchVersion()
+	latestVer, source, err := fetchVersion()
 	if err != nil {
 		return nil, err
 	}
 	hasUpdate := compareVersions(currentVersion, latestVer) < 0
-	downloadURL := base + "/" + binaryName
+	// Binary download URL uses the version-specific release tag.
+	var binaryBase string
+	if source == "gitee" {
+		binaryBase = giteeBinaryBase
+	} else {
+		binaryBase = githubBinaryBase
+	}
+	downloadURL := binaryBase + "/" + latestVer + "/" + binaryName
 	info := &UpdateInfo{
 		HasUpdate:   hasUpdate,
 		CurrentVer:  currentVersion,
 		LatestVer:   latestVer,
 		DownloadURL: downloadURL,
 		Source:      source,
-	}
-	if hasUpdate {
-		// Try to fetch release note (optional).
-		if note, e := fetchURL(base+"/release-note.txt", 5*time.Second); e == nil {
-			info.ReleaseNote = strings.TrimSpace(note)
-		}
 	}
 	return info, nil
 }
