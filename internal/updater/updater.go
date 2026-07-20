@@ -27,7 +27,7 @@ type UpdateInfo struct {
 const (
 	// Version check: raw files in the repo (no release needed).
 	giteeVersionURL  = "https://gitee.com/aues6uen11z/palworld-save-relay/raw/master/version.txt"
-	githubVersionURL = "https://raw.githubusercontent.com/Aues6uen11Z/palworld-save-relay/main/version.txt"
+	githubVersionURL = "https://raw.githubusercontent.com/Aues6uen11Z/palworld-save-relay/master/version.txt"
 	// Binary download: version-specific release tags.
 	giteeBinaryBase  = "https://gitee.com/aues6uen11z/palworld-save-relay/releases/download"
 	githubBinaryBase = "https://github.com/Aues6uen11Z/palworld-save-relay/releases/download"
