@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Dialogs, Window } from "@wailsio/runtime";
+import { Browser, Dialogs, Window } from "@wailsio/runtime";
 import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
@@ -622,24 +622,34 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
       <div className="card p-4 space-y-3">
         <h2 className="font-semibold">{t("settings.about")}</h2>
         <p className="text-sm text-gray-500">{version}</p>
-        <a href="https://github.com/Aues6uen11Z/palworld-save-relay" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">GitHub</a>
-        {updateInfo?.hasUpdate ? (
-          <div className="space-y-2">
-            <p className="text-sm text-green-600 font-medium">{t("settings.newVersion", updateInfo.latestVer)}</p>
-            {updateInfo.releaseNote && <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto">{updateInfo.releaseNote}</pre>}
-            <button className="btn-primary" onClick={doUpdate} disabled={updating}>
-              {updating ? t("settings.updating") : t("settings.updateNow")}
-            </button>
-            {updating && <p className="text-xs text-gray-400">{t("settings.updateHint")}</p>}
-          </div>
-        ) : (
-          <button className="btn-ghost" onClick={checkUpdate} disabled={checking}>
-            {checking ? t("settings.checking") : t("settings.checkUpdate")}
+        <p className="text-xs">
+          <span className="text-gray-400">GitHub: </span>
+          <button
+            onClick={() => Browser.OpenURL("https://github.com/Aues6uen11Z/palworld-save-relay")}
+            className="text-blue-500 hover:underline cursor-pointer"
+          >
+            https://github.com/Aues6uen11Z/palworld-save-relay
           </button>
-        )}
-        {updateInfo && !updateInfo.hasUpdate && (
-          <p className="text-sm text-gray-400">{t("settings.upToDate")}</p>
-        )}
+        </p>
+        <div className="pt-1">
+          {updateInfo?.hasUpdate ? (
+            <div className="space-y-2">
+              <p className="text-sm text-green-600 font-medium">{t("settings.newVersion", updateInfo.latestVer.replace(/^v/i, ""))}</p>
+              {updateInfo.releaseNote && <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto">{updateInfo.releaseNote}</pre>}
+              <button className="btn-primary" onClick={doUpdate} disabled={updating}>
+                {updating ? t("settings.updating") : t("settings.updateNow")}
+              </button>
+              {updating && <p className="text-xs text-gray-400">{t("settings.updateHint")}</p>}
+            </div>
+          ) : (
+            <button className="btn-ghost" onClick={checkUpdate} disabled={checking}>
+              {checking ? t("settings.checking") : t("settings.checkUpdate")}
+            </button>
+          )}
+          {updateInfo && !updateInfo.hasUpdate && (
+            <p className="text-sm text-gray-400 mt-2">{t("settings.upToDate")}</p>
+          )}
+        </div>
       </div>
     </div>
   );

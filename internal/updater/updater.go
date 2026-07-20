@@ -136,10 +136,14 @@ func DownloadAndUpdate(downloadURL string) error {
 		return fmt.Errorf("自动更新仅支持 Windows")
 	}
 
-	// Determine the current executable path.
+	// Determine the current executable path. Resolve symlinks and convert
+	// to clean Windows backslash paths for the batch script.
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("无法确定程序路径: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
 	}
 	exeDir := filepath.Dir(exePath)
 	tempPath := filepath.Join(exeDir, binaryName+".new")
@@ -167,16 +171,17 @@ if errorlevel 1 (
     copy /y "%s" "%s" >nul
     del "%s" >nul 2>nul
 )
-del "%s" >nul 2>nul
 start "" "%s"
-`, pid, pid, tempPath, exePath, tempPath, exePath, tempPath, batPath, exePath)
+del "%s" >nul 2>nul
+`, pid, pid, tempPath, exePath, tempPath, exePath, tempPath, exePath, batPath)
 
 	if err := os.WriteFile(batPath, []byte(bat), 0644); err != nil {
 		return fmt.Errorf("写入更新脚本失败: %w", err)
 	}
 
-	// Launch the batch script detached.
-	if err := startDetached(batPath); err != nil {
+	// Launch the batch script in a fully detached process group so it
+	// survives os.Exit(0).
+	if err := startDetachedBat(batPath); err != nil {
 		return fmt.Errorf("启动更新脚本失败: %w", err)
 	}
 	logger.Info("updater: update script launched, exiting app")
@@ -206,12 +211,6 @@ func downloadFile(url, filePath string, timeout time.Duration) error {
 	defer out.Close()
 	_, err = io.Copy(out, resp.Body)
 	return err
-}
-
-// startDetached starts a command detached from the current process.
-func startDetached(batPath string) error {
-	cmd := fmt.Sprintf(`start "" /b "%s"`, batPath)
-	return execCmd(cmd)
 }
 
 // GetCountry detects the user's country via IP API (for logging/analytics).
