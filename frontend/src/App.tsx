@@ -622,10 +622,7 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
       <div className="card p-4 space-y-3">
         <h2 className="font-semibold">{t("settings.about")}</h2>
         <p className="text-sm text-gray-500">{version}</p>
-        <div className="flex gap-3 text-xs">
-          <a href="https://github.com/Aues6uen11Z/palworld-save-relay" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">GitHub</a>
-          <a href="https://gitee.com/aues6uen11z/palworld-save-relay" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Gitee</a>
-        </div>
+        <a href="https://github.com/Aues6uen11Z/palworld-save-relay" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">GitHub</a>
         {updateInfo?.hasUpdate ? (
           <div className="space-y-2">
             <p className="text-sm text-green-600 font-medium">{t("settings.newVersion", updateInfo.latestVer)}</p>
