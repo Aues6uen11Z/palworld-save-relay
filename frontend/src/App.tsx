@@ -4,6 +4,7 @@ import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { SteamAccount } from "../bindings/palworld-save-relay/internal/palworld/models";
+import type { UpdateInfo } from "../bindings/palworld-save-relay/internal/updater/models";
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
 import { useI18n, type Lang } from "./i18n";
 
@@ -563,6 +564,39 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
   const [uploader, setUploader] = useState(cfg.uploader || "");
   const [root, setRoot] = useState(cfg.save_root || "");
   const set = (k: string, v: string) => setQ((p: any) => ({ ...p, [k]: v }));
+  const [version, setVersion] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    App.GetVersion().then(v => setVersion(v || "dev")).catch(() => setVersion("dev"));
+  }, []);
+
+  const checkUpdate = async () => {
+    setChecking(true);
+    setUpdateInfo(null);
+    try {
+      const info = await App.CheckUpdate();
+      setUpdateInfo(info);
+    } catch (e: any) {
+      setUpdateInfo({ hasUpdate: false, currentVer: version, latestVer: "", downloadUrl: "", source: "", releaseNote: String(e?.message || e) } as UpdateInfo);
+    }
+    setChecking(false);
+  };
+
+  const doUpdate = async () => {
+    if (!updateInfo) return;
+    setUpdating(true);
+    try {
+      await App.DoUpdate(updateInfo.downloadUrl);
+      await App.QuitApp();
+    } catch (e: any) {
+      alert(String(e?.message || e));
+      setUpdating(false);
+    }
+  };
+
   const save = async () => {
     const next = { ...cfg, qiniu: q, uploader, save_root: root } as Config;
     await App.SaveConfig(next);
@@ -585,6 +619,27 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
         <div><label className="label">{t("settings.saveRoot")}</label><input className="input" value={root} onChange={(e) => setRoot(e.target.value)} />{!root && autoRoot && <p className="text-xs text-gray-400 mt-1 font-mono break-all">{t("settings.autoDetect", autoRoot)}</p>}</div>
       </div>
       <button className="btn-primary" onClick={save}>{t("settings.save")}</button>
+      <div className="card p-4 space-y-3">
+        <h2 className="font-semibold">{t("settings.about")}</h2>
+        <p className="text-sm text-gray-500">v{version}</p>
+        {updateInfo?.hasUpdate ? (
+          <div className="space-y-2">
+            <p className="text-sm text-green-600 font-medium">{t("settings.newVersion", updateInfo.latestVer)}</p>
+            {updateInfo.releaseNote && <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto">{updateInfo.releaseNote}</pre>}
+            <button className="btn-primary" onClick={doUpdate} disabled={updating}>
+              {updating ? t("settings.updating") : t("settings.updateNow")}
+            </button>
+            {updating && <p className="text-xs text-gray-400">{t("settings.updateHint")}</p>}
+          </div>
+        ) : (
+          <button className="btn-ghost" onClick={checkUpdate} disabled={checking}>
+            {checking ? t("settings.checking") : t("settings.checkUpdate")}
+          </button>
+        )}
+        {updateInfo && !updateInfo.hasUpdate && (
+          <p className="text-sm text-gray-400">{t("settings.upToDate")}</p>
+        )}
+      </div>
     </div>
   );
 }

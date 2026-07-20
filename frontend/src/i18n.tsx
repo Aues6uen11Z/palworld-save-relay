@@ -131,6 +131,14 @@ const dict: Dict = {
   "settings.saveRoot": { zh: "存档目录（留空自动检测）", en: "Save directory (leave blank for auto-detect)" },
   "settings.autoDetect": { zh: "自动检测：{0}", en: "Auto-detected: {0}" },
   "settings.save": { zh: "保存配置", en: "Save Config" },
+  "settings.about": { zh: "关于", en: "About" },
+  "settings.checkUpdate": { zh: "检查更新", en: "Check for Updates" },
+  "settings.checking": { zh: "检查中...", en: "Checking..." },
+  "settings.newVersion": { zh: "发现新版本 v{0}", en: "New version v{0} available" },
+  "settings.updateNow": { zh: "立即更新", en: "Update Now" },
+  "settings.updating": { zh: "下载中...", en: "Downloading..." },
+  "settings.updateHint": { zh: "下载完成后将自动重启", en: "Will restart automatically after download" },
+  "settings.upToDate": { zh: "已是最新版本", en: "Up to date" },
 
   "lang.switch": { zh: "English", en: "中文" },
 };

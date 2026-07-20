@@ -12,18 +12,21 @@ import (
 	"time"
 
 	"palworld-save-relay/internal/config"
+
 	"palworld-save-relay/internal/logger"
 	"palworld-save-relay/internal/palworld"
 	"palworld-save-relay/internal/storage"
+	"palworld-save-relay/internal/updater"
 )
 
 // App is the Wails service exposing relay operations to the frontend.
 type App struct {
-	cfg *config.Config
+	cfg     *config.Config
+	version string
 }
 
 // NewApp creates the App service, loading persisted config.
-func NewApp() *App {
+func NewApp(version string) *App {
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Warnf("NewApp: config load failed, using defaults: %v", err)
@@ -31,7 +34,7 @@ func NewApp() *App {
 	} else {
 		logger.Infof("NewApp: config loaded (save_root=%q uploader=%q qiniu_bucket=%q)", cfg.SaveRoot, cfg.Uploader, cfg.Qiniu.Bucket)
 	}
-	return &App{cfg: cfg}
+	return &App{cfg: cfg, version: version}
 }
 
 // ---------- config ----------
@@ -225,6 +228,31 @@ func (a *App) LocalSteamID() (uint64, error) {
 	}
 	logger.Infof("LocalSteamID: root=%s steamid=%d", root, sid)
 	return sid, nil
+}
+
+// ---------- update ----------
+
+// GetVersion returns the current application version.
+func (a *App) GetVersion() string {
+	return a.version
+}
+
+// CheckUpdate checks Gitee (China-friendly) then GitHub for a newer release.
+func (a *App) CheckUpdate() (*updater.UpdateInfo, error) {
+	return updater.CheckForUpdate(a.version)
+}
+
+// DoUpdate downloads the new binary and applies it in-place. After this
+// returns, the caller should call QuitApp to let the update script replace
+// the binary and restart.
+func (a *App) DoUpdate(downloadURL string) error {
+	return updater.DownloadAndUpdate(downloadURL)
+}
+
+// QuitApp exits the application immediately. Used after DoUpdate to let the
+// update batch script proceed with the binary replacement and restart.
+func (a *App) QuitApp() {
+	os.Exit(0)
 }
 
 // ---------- host conversion ----------

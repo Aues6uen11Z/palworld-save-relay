@@ -15,6 +15,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Version is set at build time via ldflags: -X main.Version=v0.5.5
+var Version = "dev"
+
 func main() {
 	hideConsole()
 
@@ -32,7 +35,7 @@ func main() {
 		Name:        "幻兽帕鲁换房主",
 		Description: "Palworld co-op save relay",
 		Services: []application.Service{
-			application.NewService(NewApp()),
+			application.NewService(NewApp(Version)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
