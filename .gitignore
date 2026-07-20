@@ -25,3 +25,4 @@ PRD.md
 *.exe~
 cmd/
 debug/
+.gitee_token
