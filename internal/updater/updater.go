@@ -53,7 +53,12 @@ func fetchVersion() (version, source string, err error) {
 // fetchURL fetches a text URL with a timeout.
 func fetchURL(url string, timeout time.Duration) (string, error) {
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "PalworldSaveRelay/Updater")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +186,12 @@ start "" "%s"
 // downloadFile downloads url to filePath with the given timeout.
 func downloadFile(url, filePath string, timeout time.Duration) error {
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "PalworldSaveRelay/Updater")
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
