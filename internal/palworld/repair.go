@@ -16,6 +16,7 @@ type RepairReport struct {
 	ConvertedOpaque           bool   // old-host UIDs in opaque blobs moved back to the host slot
 	MapObjectBuildersRepaired int    // facility builder UIDs reset to host (orphaned/corrupted)
 	ContainerSlotsFixed       int    // palbox slot PlayerUIds resynced to host after pal consolidation
+	OwnerlessPalsFixed        int    // pals with missing OwnerPlayerUId restored to host
 }
 
 // RepairIntermediate repairs a cloud/imported intermediate that may have been
@@ -71,6 +72,9 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 	// stale slots left by a previous consolidation that didn't fix them.
 	rep.ContainerSlotsFixed = fixContainerSlotPlayerUids(gf)
 
+	// Restore OwnerPlayerUId for pals whose ownership was stripped.
+	rep.OwnerlessPalsFixed = fixOwnerlessPals(gf)
+
 	guilds := findAllGuilds(gf)
 
 	// Act on guild ICH only when a guild's ICH is incomplete (the early-tool
@@ -87,7 +91,7 @@ func RepairIntermediate(worldDir string) (*RepairReport, error) {
 	}
 
 	// Nothing to do: leave the save untouched.
-	if !needFix && builderN == 0 && rep.ContainerSlotsFixed == 0 {
+	if !needFix && builderN == 0 && rep.ContainerSlotsFixed == 0 && rep.OwnerlessPalsFixed == 0 {
 		return rep, nil
 	}
 
@@ -198,6 +202,102 @@ func fixContainerSlotPlayerUids(gf *sav.GvasFile) int {
 			copy(b[4:20], HostUUID[:])
 			fixed++
 		}
+	}
+	return fixed
+}
+
+// fixOwnerlessPals restores OwnerPlayerUId (and OwnedTime) for CSPM pals whose
+// ownership fields were stripped — likely by a buggy conversion in an earlier
+// tool version. Without OwnerPlayerUId the game can't determine who owns the
+// pal, so it can't be lifted in the base camp. Sets OwnerPlayerUId to the host
+// sentinel (0001) and OwnedTime to 0, inserted before OldOwnerPlayerUIds to
+// match the canonical property order. Idempotent.
+func fixOwnerlessPals(gf *sav.GvasFile) int {
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return 0
+	}
+	pl, ok := wsd["value"].(sav.PropertyList)
+	if !ok {
+		return 0
+	}
+	cspm := pl.Get("CharacterSaveParameterMap")
+	if cspm == nil {
+		return 0
+	}
+	entries, _ := cspm["value"].([]map[string]any)
+	var zeroUUID sav.UUID
+	fixed := 0
+	for _, e := range entries {
+		val, _ := e["value"].(sav.PropertyList)
+		if val == nil {
+			continue
+		}
+		raw := val.Get("RawData")
+		if raw == nil {
+			continue
+		}
+		rv, _ := raw["value"].(map[string]any)
+		if rv == nil {
+			continue
+		}
+		obj, _ := rv["object"].(sav.PropertyList)
+		if obj == nil {
+			continue
+		}
+		sp := obj.Get("SaveParameter")
+		if sp == nil {
+			continue
+		}
+		inner, _ := sp["value"].(sav.PropertyList)
+		if inner == nil {
+			continue
+		}
+		isPlayer, _ := inner.Get("IsPlayer")["value"].(bool)
+		if isPlayer {
+			continue
+		}
+		if inner.Get("OwnerPlayerUId") != nil {
+			continue // already has owner
+		}
+
+		// Build the two missing properties.
+		hostCopy := HostUUID
+		ownedTime := sav.PropertyEntry{
+			Name: "OwnedTime",
+			Value: map[string]any{
+				"type":        "StructProperty",
+				"struct_type": "DateTime",
+				"struct_id":   &zeroUUID,
+				"id":          (*sav.UUID)(nil),
+				"value":       uint64(0),
+			},
+		}
+		ownerProp := sav.PropertyEntry{
+			Name: "OwnerPlayerUId",
+			Value: map[string]any{
+				"type":        "StructProperty",
+				"struct_type": "Guid",
+				"struct_id":   &zeroUUID,
+				"id":          (*sav.UUID)(nil),
+				"value":       &hostCopy,
+			},
+		}
+
+		// Insert before OldOwnerPlayerUIds (or SlotId, or at end).
+		insertIdx := len(inner)
+		for i, fe := range inner {
+			if fe.Name == "OldOwnerPlayerUIds" || fe.Name == "SlotId" {
+				insertIdx = i
+				break
+			}
+		}
+		newInner := make(sav.PropertyList, 0, len(inner)+2)
+		newInner = append(newInner, inner[:insertIdx]...)
+		newInner = append(newInner, ownedTime, ownerProp)
+		newInner = append(newInner, inner[insertIdx:]...)
+		sp["value"] = newInner
+		fixed++
 	}
 	return fixed
 }
