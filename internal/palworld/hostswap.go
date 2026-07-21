@@ -78,7 +78,6 @@ func ConvertHost(worldDir string, fromUID, toUID sav.UUID) error {
 	return nil
 }
 
-
 // ConvertHostWithoutBackup is like ConvertHost but skips the backup step. Use
 // this when the caller has already backed up the world (e.g. DownloadVersion
 // or ImportWorld backs up before calling ActivateHost). If the convert fails
@@ -97,6 +96,7 @@ func ConvertHostWithoutBackup(worldDir string, fromUID, toUID sav.UUID) error {
 	logger.Infof("ConvertHostWithoutBackup: world=%s done", guid)
 	return nil
 }
+
 // PackIntermediate produces the cloud/manual-transfer intermediate WITHOUT
 // modifying the original world: it packs worldDir, unpacks into a temp dir,
 // converts the host slot (0001) to realUID in the temp copy, and repacks. The
@@ -129,7 +129,11 @@ func PackIntermediate(worldDir string, realUID sav.UUID) ([]byte, error) {
 	// LocalData.sav is personal local progress (quests/map/etc.); it must never
 	// be transferred. Drop it from the intermediate so a downloader keeps their
 	// own. (Local backups still include it via PackWorld for full rollback.)
-	if err := os.Remove(filepath.Join(dst, "LocalData.sav")); err == nil {
+	if err := os.Remove(filepath.Join(dst, "LocalData.sav")); err != nil {
+		if !os.IsNotExist(err) {
+			logger.Warnf("PackIntermediate: failed to drop LocalData.sav from intermediate: %v (it will be included in the transfer)", err)
+		}
+	} else {
 		logger.Info("PackIntermediate: dropped LocalData.sav from intermediate (personal, not transferred)")
 	}
 	if err := convertHostImpl(dst, HostUUID, realUID); err != nil {
@@ -161,8 +165,6 @@ func convertHostImpl(worldDir string, fromUID, toUID sav.UUID) error {
 	}
 	return nil
 }
-
-
 
 // convertFile reads path, replaces fromUID -> toUID, validates, and writes
 // atomically to outPath.
@@ -292,6 +294,12 @@ func replaceWorld(worldDir string, zipBytes []byte, keepLocalData bool) error {
 	// file).
 	entries, _ = os.ReadDir(tmp)
 	for _, e := range entries {
+		name := e.Name()
+		// Never overwrite a preserved LocalData.sav, even if the temp copy
+		// still has one (e.g. removal failed due to a file lock).
+		if keepLocalData && name == "LocalData.sav" {
+			continue
+		}
 		src := filepath.Join(tmp, e.Name())
 		dst := filepath.Join(worldDir, e.Name())
 		if err := os.Rename(src, dst); err != nil {
@@ -315,13 +323,6 @@ func RestoreFromBackup(worldDir, backupZip string) error {
 	// overwritten by a backup's copy - even during auto-rollback.
 	return ReplaceWorldKeepLocalData(worldDir, data)
 }
-
-
-
-
-
-
-
 
 // convertHostLevel converts the host slot in Level.sav for a host step-down or
 // step-up. Unlike a uniform UID swap (ConvertGvas), it moves ONLY the host
@@ -511,7 +512,7 @@ func moveHostPlayerSlot(gf *sav.GvasFile, fromUID, toUID sav.UUID, hostInst *sav
 				if m == nil {
 					continue
 				}
-			inst, _ := m["instance_id"].(*sav.UUID)
+				inst, _ := m["instance_id"].(*sav.UUID)
 				if inst == nil || !inst.Equal(hostInst) {
 					continue
 				}
@@ -523,4 +524,3 @@ func moveHostPlayerSlot(gf *sav.GvasFile, fromUID, toUID sav.UUID, hostInst *sav
 		}
 	}
 }
-
