@@ -126,7 +126,9 @@ func vdfValue(line, key string) string {
 // steamInstallPath returns the Steam install directory via the Windows
 // registry. Falls back to C:\Program Files (x86)\Steam if not found.
 func steamInstallPath() (string, error) {
-	out, err := exec.Command("reg", "query", `HKCU\Software\Valve\Steam`, "/v", "SteamPath").Output()
+	c := exec.Command("reg", "query", `HKCU\Software\Valve\Steam`, "/v", "SteamPath")
+	hideCmdWindow(c)
+	out, err := c.Output()
 	if err != nil {
 		return `C:\Program Files (x86)\Steam`, nil
 	}

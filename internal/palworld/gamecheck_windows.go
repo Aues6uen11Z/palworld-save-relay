@@ -7,7 +7,9 @@ import (
 )
 
 func processIDsOS(name string) ([]int, error) {
-	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq "+name+".exe", "/FO", "CSV", "/NH").Output()
+	c := exec.Command("tasklist", "/FI", "IMAGENAME eq "+name+".exe", "/FO", "CSV", "/NH")
+	hideCmdWindow(c)
+	out, err := c.Output()
 	if err != nil {
 		return nil, err
 	}
