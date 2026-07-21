@@ -4,7 +4,6 @@ import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { SteamAccount } from "../bindings/palworld-save-relay/internal/palworld/models";
-import type { UpdateInfo } from "../bindings/palworld-save-relay/internal/updater/models";
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
 import { useI18n, type Lang } from "./i18n";
 
@@ -40,10 +39,43 @@ export default function AppView() {
   const [steamAccounts, setSteamAccounts] = useState<SteamAccount[]>([]);
   const [detectErr, setDetectErr] = useState("");
   const [maximised, setMaximised] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const flash = (kind: "ok" | "err", msg: string) => {
     setToast({ kind, msg });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const checkUpdate = async (silent = false) => {
+    try {
+      const info = await App.CheckUpdate();
+      if (info?.hasUpdate) {
+        const note = info.releaseNote ? `\n\n${info.releaseNote}` : "";
+        setModal({
+          title: t("settings.newVersion", info.latestVer.replace(/^v/i, "")),
+          message: t("settings.updateMessage") + note,
+          buttons: [
+            { label: t("settings.updateNow"), variant: "primary" },
+            { label: t("settings.later"), variant: "ghost" },
+          ],
+          onButton: async (i) => {
+            if (i === 0) {
+              try {
+                await App.DoUpdate(info.downloadUrl);
+                await App.QuitApp();
+              } catch (e: any) {
+                flash("err", String(e?.message || e));
+              }
+            }
+            setModal(null);
+          },
+        });
+      } else if (!silent) {
+        flash("ok", t("settings.upToDate"));
+      }
+    } catch (e: any) {
+      if (!silent) flash("err", String(e?.message || e));
+    }
   };
 
   const refreshWorlds = useCallback(async () => {
@@ -71,8 +103,14 @@ export default function AppView() {
         flash("err", t("err.loadConfig", String(e?.message || e)));
       }
       await refreshWorlds();
+      setReady(true);
     })();
   }, [refreshWorlds]);
+
+  // Auto-check for updates on startup (silent).
+  useEffect(() => {
+    if (ready) checkUpdate(true);
+  }, [ready]);
 
   // Keep the native window title in sync with the selected language.
   useEffect(() => {
@@ -274,7 +312,7 @@ export default function AppView() {
           {view === "cloud" && <CloudView world={selWorld} busy={busy} onDownloadActivate={(k) => handleDownloadActivate(k)} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} onRestore={(name) => { if (selWorld) run(t("backups.restore"), () => App.RestoreBackup(selWorld.Path, name), t("toast.rolledBack")); }} />}
           {view === "settings" && (
-            <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} />
+            <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} onCheckUpdate={() => checkUpdate(false)} />
           )}
           </div>
         </div>
@@ -299,6 +337,8 @@ export default function AppView() {
           {toast.msg}
         </div>
       )}
+
+      {!ready && <div className="fixed inset-0 z-[100] bg-[#f5f5f7]" />}
     </div>
   );
 }
@@ -347,7 +387,7 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
         className="drag px-5 py-5 text-white font-bold flex items-center gap-2"
         onDoubleClick={() => Window.ToggleMaximise()}
       >
-        <span className="text-xl">🪄</span> {t("app.title")}
+        <span className="text-xl">✨</span> {t("app.title")}
       </div>
       <nav className="flex-1 px-2 space-y-1">
         {items.map(([v, label]) => (
@@ -507,12 +547,12 @@ function CloudView({ world, busy, onDownloadActivate }: { world: World | null; b
       ) : (
         <div className="divide-y divide-gray-100">
           {versions.map((v, i) => {
-            const [, , up] = (v.Key || "").split("/").pop()?.split("__") || [];
+            const up = (v.Key || "").split("/").pop()?.split("__")?.[1]?.replace(/\.zip$/, "") || "";
             return (
               <div key={v.Key} className="py-2 flex items-center justify-between">
                 <div className="text-sm">
                   <div className="font-medium">{new Date(v.LastModified).toLocaleString()}</div>
-                  <div className="text-xs text-gray-400">{v.Uploader || up || ""} · {(v.Size / 1024).toFixed(0)} KB</div>
+                  <div className="text-xs text-gray-400">{v.Uploader || up} · {(v.Size / 1024).toFixed(0)} KB</div>
                 </div>
                 {i === 0 ? <span className="pill bg-emerald-100 text-emerald-700">{t("cloud.latest")}</span> : (
                   <button className="btn-ghost" disabled={busy} onClick={() =>
@@ -558,44 +598,17 @@ function BackupsView({ world, busy, flash, onRestore }: { world: World | null; b
   );
 }
 
-function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: string; onSaved: (c: Config) => void }) {
+function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate }: { cfg: Config; autoRoot: string; onSaved: (c: Config) => void; onCheckUpdate: () => void }) {
   const { t } = useI18n();
   const [q, setQ] = useState(cfg.qiniu || ({} as any));
   const [uploader, setUploader] = useState(cfg.uploader || "");
   const [root, setRoot] = useState(cfg.save_root || "");
   const set = (k: string, v: string) => setQ((p: any) => ({ ...p, [k]: v }));
   const [version, setVersion] = useState("");
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     App.GetVersion().then(v => setVersion(v || "dev")).catch(() => setVersion("dev"));
   }, []);
-
-  const checkUpdate = async () => {
-    setChecking(true);
-    setUpdateInfo(null);
-    try {
-      const info = await App.CheckUpdate();
-      setUpdateInfo(info);
-    } catch (e: any) {
-      setUpdateInfo({ hasUpdate: false, currentVer: version, latestVer: "", downloadUrl: "", source: "", releaseNote: String(e?.message || e) } as UpdateInfo);
-    }
-    setChecking(false);
-  };
-
-  const doUpdate = async () => {
-    if (!updateInfo) return;
-    setUpdating(true);
-    try {
-      await App.DoUpdate(updateInfo.downloadUrl);
-      await App.QuitApp();
-    } catch (e: any) {
-      alert(String(e?.message || e));
-      setUpdating(false);
-    }
-  };
 
   const save = async () => {
     const next = { ...cfg, qiniu: q, uploader, save_root: root } as Config;
@@ -632,23 +645,9 @@ function SettingsView({ cfg, autoRoot, onSaved }: { cfg: Config; autoRoot: strin
           </button>
         </p>
         <div className="pt-1">
-          {updateInfo?.hasUpdate ? (
-            <div className="space-y-2">
-              <p className="text-sm text-green-600 font-medium">{t("settings.newVersion", updateInfo.latestVer.replace(/^v/i, ""))}</p>
-              {updateInfo.releaseNote && <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto">{updateInfo.releaseNote}</pre>}
-              <button className="btn-primary" onClick={doUpdate} disabled={updating}>
-                {updating ? t("settings.updating") : t("settings.updateNow")}
-              </button>
-              {updating && <p className="text-xs text-gray-400">{t("settings.updateHint")}</p>}
-            </div>
-          ) : (
-            <button className="btn-ghost" onClick={checkUpdate} disabled={checking}>
-              {checking ? t("settings.checking") : t("settings.checkUpdate")}
-            </button>
-          )}
-          {updateInfo && !updateInfo.hasUpdate && (
-            <p className="text-sm text-gray-400 mt-2">{t("settings.upToDate")}</p>
-          )}
+          <button className="btn-ghost" onClick={onCheckUpdate}>
+            {t("settings.checkUpdate")}
+          </button>
         </div>
       </div>
     </div>

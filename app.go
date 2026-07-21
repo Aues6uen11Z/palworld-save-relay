@@ -257,11 +257,21 @@ func (a *App) QuitApp() {
 
 // ---------- host conversion ----------
 
+// steamIDFromPath extracts the SteamID64 from a world path (saveRoot/SteamID/WorldGUID).
+func steamIDFromPath(worldPath string) (uint64, error) {
+	steamIDFolder := filepath.Base(filepath.Dir(worldPath))
+	var sid uint64
+	if _, err := fmt.Sscanf(steamIDFolder, "%d", &sid); err != nil || sid == 0 {
+		return 0, fmt.Errorf("cannot determine SteamID from world path: %s", worldPath)
+	}
+	return sid, nil
+}
+
 // ActivateHost converts the local player's real UID to the host slot, making
 // this machine the host. Call after downloading the intermediate.
 func (a *App) ActivateHost(worldPath string) error {
 	guid := filepath.Base(worldPath)
-	sid, err := a.LocalSteamID()
+	sid, err := steamIDFromPath(worldPath)
 	if err != nil {
 		return err
 	}
@@ -312,7 +322,7 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 func (a *App) packAndStripToGuest(worldPath string) ([]byte, error) {
 	guid := filepath.Base(worldPath)
 
-	sid, err := a.LocalSteamID()
+	sid, err := steamIDFromPath(worldPath)
 	if err != nil {
 		return nil, err
 	}

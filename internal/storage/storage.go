@@ -78,6 +78,8 @@ func ListVersions(ctx context.Context, s Storage, worldGUID string) ([]Object, e
 	var out []Object
 	for _, o := range objs {
 		if IsVersionKey(o.Key) {
+			_, up, _ := ParseVersionKey(o.Key)
+			o.Uploader = up
 			out = append(out, o)
 		}
 	}

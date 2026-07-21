@@ -26,3 +26,5 @@ PRD.md
 cmd/
 debug/
 .gitee_token
+*-guid.md
+release-note.txt

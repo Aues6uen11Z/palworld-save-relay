@@ -139,6 +139,8 @@ const dict: Dict = {
   "settings.updating": { zh: "下载中...", en: "Downloading..." },
   "settings.updateHint": { zh: "下载完成后将自动重启", en: "Will restart automatically after download" },
   "settings.upToDate": { zh: "已是最新版本", en: "Up to date" },
+  "settings.updateMessage": { zh: "发现新版本，建议立即更新。", en: "A new version is available. Update recommended." },
+  "settings.later": { zh: "稍后", en: "Later" },
 
   "lang.switch": { zh: "English", en: "中文" },
 };
