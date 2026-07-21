@@ -60,14 +60,22 @@ export default function AppView() {
           ],
           onButton: async (i) => {
             if (i === 0) {
+              setModal({
+                title: t("settings.updating"),
+                message: t("settings.updateHint"),
+                buttons: [],
+                onButton: () => {},
+              });
               try {
                 await App.DoUpdate(info.downloadUrl);
                 await App.QuitApp();
               } catch (e: any) {
                 flash("err", String(e?.message || e));
+                setModal(null);
               }
+            } else {
+              setModal(null);
             }
-            setModal(null);
           },
         });
       } else if (!silent) {
