@@ -163,6 +163,16 @@ func convertHostImpl(worldDir string, fromUID, toUID sav.UUID) error {
 	if err := os.Remove(fromFile); err != nil {
 		return fmt.Errorf("remove old player save: %w", err)
 	}
+	// Convert the Pal Dimension Storage (_dps.sav) if present.
+	fromDps := filepath.Join(playersDir, strings.TrimSuffix(uidFilename(fromUID), ".sav")+"_dps.sav")
+	toDps := filepath.Join(playersDir, strings.TrimSuffix(uidFilename(toUID), ".sav")+"_dps.sav")
+	if _, err := os.Stat(fromDps); err == nil {
+		if err := convertFile(fromDps, toDps, fromUID, toUID, hints, custom); err != nil {
+			logger.Warnf("convertHostImpl: _dps.sav convert failed: %v (skipped)", err)
+		} else {
+			_ = os.Remove(fromDps)
+		}
+	}
 	return nil
 }
 

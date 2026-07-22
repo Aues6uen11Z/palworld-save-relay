@@ -21,10 +21,10 @@ bin/
 *.syso
 
 docs/superpowers/
+docs/bugfix/
 PRD.md
 *.exe~
 cmd/
 debug/
 .gitee_token
-palworld-save-guide.md
 release-note.txt
