@@ -315,11 +315,9 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 	return &storage.LockManager{Store: s, TTL: a.cfg.LockTTL}, nil
 }
 
-// packAndStripToGuest packs the world as the transfer intermediate, backs up
-// the full world, then strips the local world to guest-only. Returns the
-// intermediate data for the caller to send to its final destination (cloud
-// upload, file export, etc.).
-func (a *App) packAndStripToGuest(worldPath string) ([]byte, error) {
+// packForTransfer packs the world as the transfer intermediate (read-only).
+// Returns the intermediate data without modifying the local world.
+func (a *App) packForTransfer(worldPath string) ([]byte, error) {
 	guid := filepath.Base(worldPath)
 
 	sid, err := steamIDFromPath(worldPath)
@@ -327,39 +325,41 @@ func (a *App) packAndStripToGuest(worldPath string) ([]byte, error) {
 		return nil, err
 	}
 
-	logger.Infof("packAndStripToGuest: world=%s packing intermediate", guid)
+	logger.Infof("packForTransfer: world=%s packing intermediate", guid)
 	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
 	if err != nil {
-		logger.Errorf("packAndStripToGuest: world=%s pack intermediate failed: %v", guid, err)
+		logger.Errorf("packForTransfer: world=%s pack intermediate failed: %v", guid, err)
 		return nil, err
 	}
-
-	// Back up the full world, then strip to guest-only so the former host
-	// cannot keep a conflicting host copy. They can restore from the backup
-	// (Backups page) to play again.
-	backupPath, err := palworld.BackupWorld(worldPath)
-	if err != nil {
-		logger.Errorf("packAndStripToGuest: world=%s backup failed: %v", guid, err)
-		return nil, err
-	}
-	if err := palworld.StripToGuest(worldPath); err != nil {
-		logger.Errorf("packAndStripToGuest: world=%s strip to guest failed: %v", guid, err)
-		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
-			return nil, fmt.Errorf("strip to guest failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
-		}
-		return nil, fmt.Errorf("strip to guest failed (rolled back from %s): %w", backupPath, err)
-	}
-	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
-		logger.Warnf("packAndStripToGuest: prune backups failed: %v", err)
-	}
-
-	logger.Infof("packAndStripToGuest: world=%s done (%d bytes)", guid, len(data))
+	logger.Infof("packForTransfer: world=%s done (%d bytes)", guid, len(data))
 	return data, nil
 }
 
-// UploadWorld packs the world as the transfer intermediate and uploads it to
-// the cloud. After a successful upload the local world is stripped to guest -
-// the owner can restore from Backups to play again.
+// stripToGuestWithRollback backs up the world, strips to guest-only, and
+// rolls back on failure. Used after a successful upload/export.
+func (a *App) stripToGuestWithRollback(worldPath string) error {
+	guid := filepath.Base(worldPath)
+	backupPath, err := palworld.BackupWorld(worldPath)
+	if err != nil {
+		logger.Errorf("stripToGuestWithRollback: world=%s backup failed: %v", guid, err)
+		return err
+	}
+	if err := palworld.StripToGuest(worldPath); err != nil {
+		logger.Errorf("stripToGuestWithRollback: world=%s strip to guest failed: %v", guid, err)
+		if rbErr := palworld.RestoreFromBackup(worldPath, backupPath); rbErr != nil {
+			return fmt.Errorf("strip to guest failed: %v; rollback also failed: %v; backup at %s, please restore manually", err, rbErr, backupPath)
+		}
+		return fmt.Errorf("strip to guest failed (rolled back from %s): %w", backupPath, err)
+	}
+	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
+		logger.Warnf("stripToGuestWithRollback: prune backups failed: %v", err)
+	}
+	logger.Infof("stripToGuestWithRollback: world=%s stripped to guest", guid)
+	return nil
+}
+
+// UploadWorld packs the world, uploads to cloud, then strips to guest.
+// Atomic: if upload fails, world is untouched. If strip fails, rolls back.
 func (a *App) UploadWorld(worldPath string) error {
 	guid := filepath.Base(worldPath)
 	s, err := a.newStorage()
@@ -367,11 +367,13 @@ func (a *App) UploadWorld(worldPath string) error {
 		return err
 	}
 
-	data, err := a.packAndStripToGuest(worldPath)
+	// Phase 1: pack (read-only, no mutation).
+	data, err := a.packForTransfer(worldPath)
 	if err != nil {
 		return err
 	}
 
+	// Phase 2: upload to cloud.
 	up := a.cfg.Uploader
 	if up == "" {
 		up = "player"
@@ -379,6 +381,11 @@ func (a *App) UploadWorld(worldPath string) error {
 	key, err := storage.UploadVersion(context.Background(), s, guid, up, bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		logger.Errorf("UploadWorld: world=%s upload failed (%d bytes): %v", guid, len(data), err)
+		return err
+	}
+
+	// Phase 3: strip to guest (with rollback on failure).
+	if err := a.stripToGuestWithRollback(worldPath); err != nil {
 		return err
 	}
 
@@ -628,19 +635,29 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 // ExportWorld packs the world as the transfer intermediate and writes it to a
 // .palrelay.zip at outPath. After a successful export the local world is
 // stripped to guest - identical semantics to cloud upload minus the network.
+// ExportWorld packs the world, writes to file, then strips to guest.
+// Atomic: if write fails, world is untouched. If strip fails, rolls back.
 func (a *App) ExportWorld(worldPath, outPath string) error {
 	guid := filepath.Base(worldPath)
 	logger.Infof("ExportWorld: world=%s -> %s", guid, outPath)
 
-	data, err := a.packAndStripToGuest(worldPath)
+	// Phase 1: pack (read-only, no mutation).
+	data, err := a.packForTransfer(worldPath)
 	if err != nil {
 		return err
 	}
 
+	// Phase 2: write to file.
 	if err := os.WriteFile(outPath, data, 0o644); err != nil {
 		logger.Errorf("ExportWorld: write %s failed: %v", outPath, err)
 		return err
 	}
+
+	// Phase 3: strip to guest (with rollback on failure).
+	if err := a.stripToGuestWithRollback(worldPath); err != nil {
+		return err
+	}
+
 	logger.Infof("ExportWorld: world=%s -> %s done (%d bytes), stripped to guest", guid, outPath, len(data))
 	return nil
 }
