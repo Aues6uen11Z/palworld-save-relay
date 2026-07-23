@@ -3,6 +3,8 @@ package palworld
 import (
 	"encoding/binary"
 	"unicode/utf16"
+
+	"palworld-save-relay/internal/sav"
 )
 
 // cityhash64 is Google's CityHash64, ported from palsav._cityhash (used by
@@ -167,6 +169,12 @@ func SteamIDToPlayerUUID(steamID uint64) [16]byte {
 	var u [16]byte
 	binary.LittleEndian.PutUint32(u[:4], r)
 	return u
+}
+
+// SteamIDToPlayerUUIDString converts a SteamID64 to the formatted Palworld
+// player UID string (e.g. "f5a9a2d9-0000-0000-0000-000000000000").
+func SteamIDToPlayerUUIDString(steamID uint64) string {
+	return sav.UUID(SteamIDToPlayerUUID(steamID)).String()
 }
 
 // encodeUTF16LEString encodes the decimal string of v as UTF-16-LE bytes.

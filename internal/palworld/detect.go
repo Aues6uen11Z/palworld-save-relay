@@ -234,6 +234,38 @@ func ListPlayers(worldDir string) ([]Player, error) {
 	return players, nil
 }
 
+// PalCount returns the total number of character entries (pals + players) in
+// Level.sav's CharacterSaveParameterMap. Used for relay history diagnostics.
+func PalCount(worldDir string) (int, error) {
+	levelPath := filepath.Join(worldDir, "Level.sav")
+	data, err := os.ReadFile(levelPath)
+	if err != nil {
+		return 0, fmt.Errorf("palworld: read Level.sav: %w", err)
+	}
+	gvas, _, err := sav.Decompress(data)
+	if err != nil {
+		return 0, err
+	}
+	hints, custom := sav.PalWorldConfig()
+	gf, err := sav.ReadGvasFile(gvas, hints, custom)
+	if err != nil {
+		return 0, err
+	}
+	wsd := gf.Properties.Get("worldSaveData")
+	if wsd == nil {
+		return 0, errors.New("palworld: worldSaveData not found")
+	}
+	cspm := wsd["value"].(sav.PropertyList).Get("CharacterSaveParameterMap")
+	if cspm == nil {
+		return 0, nil
+	}
+	entries, ok := cspm["value"].([]map[string]any)
+	if !ok {
+		return 0, nil
+	}
+	return len(entries), nil
+}
+
 // LocalSteamID returns the SteamID64 of the local player (the save folder name
 // under root), used to derive the host's real UID via SteamIDToPlayerUUID.
 func LocalSteamID(root string) (uint64, error) {

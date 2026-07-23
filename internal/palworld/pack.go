@@ -84,6 +84,9 @@ func UnpackWorld(zipBytes []byte, destDir string) error {
 	}
 	count := 0
 	for _, f := range zr.File {
+		if strings.HasPrefix(filepath.ToSlash(f.Name), "_") {
+			continue // skip metadata files (relay log, etc.)
+		}
 		outPath := filepath.Join(destDir, filepath.FromSlash(f.Name))
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			return err
@@ -124,4 +127,41 @@ func (r *bytesReaderImpl) Read(p []byte) (int, error) {
 	n := copy(p, r.b[r.i:])
 	r.i += n
 	return n, nil
+}
+
+// ReadFileFromZip reads a single file from a zip byte slice. Returns the file
+// data and true if found, or nil and false if not.
+func ReadFileFromZip(zipBytes []byte, name string) ([]byte, bool) {
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil, false
+	}
+	for _, f := range zr.File {
+		if filepath.ToSlash(f.Name) == name {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, false
+			}
+			defer rc.Close()
+			data, err := io.ReadAll(rc)
+			if err != nil {
+				return nil, false
+			}
+			return data, true
+		}
+	}
+	return nil, false
+}
+
+// ListZipFiles returns the names of all files in a zip byte slice.
+func ListZipFiles(zipBytes []byte) []string {
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, filepath.ToSlash(f.Name))
+	}
+	return names
 }

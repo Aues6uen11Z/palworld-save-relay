@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"palworld-save-relay/internal/apperr"
+	"palworld-save-relay/internal/relaylog"
 	"palworld-save-relay/internal/config"
 	"sync/atomic"
 
@@ -33,6 +34,82 @@ var opCounter uint64
 // within a single user operation (upload, download, import, export, etc.).
 func opID() string {
 	return fmt.Sprintf("#%06d", atomic.AddUint64(&opCounter, 1))
+}
+
+// takeSnapshot captures the filesystem + save state of a world directory.
+func takeSnapshot(worldDir string) *relaylog.Snapshot {
+	guid := filepath.Base(worldDir)
+	snap := &relaylog.Snapshot{}
+	entries, err := os.ReadDir(worldDir)
+	if err != nil {
+		logger.Warnf("takeSnapshot: world=%s read dir failed: %v", guid, err)
+		return snap
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, _ := e.Info()
+		name := e.Name()
+		snap.Files = append(snap.Files, relaylog.FileEntry{Name: name, Size: info.Size()})
+		switch strings.ToLower(name) {
+		case "level.sav":
+			snap.IsHost = true
+		case "localdata.sav":
+			snap.HasLocalData = true
+		case "levelmeta.sav":
+			snap.HasLevelMeta = true
+		}
+	}
+	// Count player save files.
+	playersDir := filepath.Join(worldDir, "Players")
+	if pentries, err := os.ReadDir(playersDir); err == nil {
+		for _, e := range pentries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".sav") {
+				snap.PlayerFiles++
+			}
+		}
+	}
+	// If host save, parse players and pal count.
+	if snap.IsHost {
+		if players, err := palworld.ListPlayers(worldDir); err == nil {
+			for _, p := range players {
+				snap.Players = append(snap.Players, relaylog.PlayerInfo{
+					UID: p.UID, Name: p.NickName, IsHost: p.IsHost,
+				})
+			}
+		}
+		if n, err := palworld.PalCount(worldDir); err == nil {
+			snap.PalCount = n
+		}
+	}
+	return snap
+}
+
+// relayLogFilename is the name of the relay history file inside the zip.
+const relayLogFilename = "_relay_log.jsonl"
+
+// appendRelayEntry appends an entry to the local relay log and returns all
+// entries (for embedding in the zip).
+func appendRelayEntry(guid string, e relaylog.Entry) []relaylog.Entry {
+	if err := relaylog.Append(guid, e); err != nil {
+		logger.Warnf("relaylog: append guid=%s failed: %v", guid, err)
+	}
+	return relaylog.Read(guid)
+}
+
+// mergeRelayFromZip extracts the relay log from a zip, merges with local,
+// writes the merged log, and returns it.
+func mergeRelayFromZip(guid string, zipBytes []byte) []relaylog.Entry {
+	local := relaylog.Read(guid)
+	if data, ok := palworld.ReadFileFromZip(zipBytes, relayLogFilename); ok {
+		incoming := relaylog.Deserialize(data)
+		local = relaylog.Merge(local, incoming)
+		if err := relaylog.Write(guid, local); err != nil {
+			logger.Warnf("relaylog: merge write guid=%s failed: %v", guid, err)
+		}
+	}
+	return local
 }
 
 // NewApp creates the App service, loading persisted config.
@@ -261,11 +338,31 @@ func (a *App) ExportLog(outPath string) error {
 		logger.Errorf("ExportLog: read %s failed: %v", src, err)
 		return fmt.Errorf("log file not found: %w", err)
 	}
-	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+	// Append relay history for all worlds.
+	var relaySB strings.Builder
+	relaySB.WriteString("\n\n=== Relay History ===\n")
+	appData := os.Getenv("APPDATA")
+	if appData != "" {
+		relayDir := filepath.Join(appData, "PalSaveRelay")
+		if entries, err := os.ReadDir(relayDir); err == nil {
+			for _, e := range entries {
+				if !strings.HasPrefix(e.Name(), "relay-log-") || !strings.HasSuffix(e.Name(), ".jsonl") {
+					continue
+				}
+				guid := strings.TrimSuffix(strings.TrimPrefix(e.Name(), "relay-log-"), ".jsonl")
+				relaySB.WriteString("\n--- World " + guid + " ---\n")
+				if rd, err := os.ReadFile(filepath.Join(relayDir, e.Name())); err == nil {
+					relaySB.Write(rd)
+				}
+			}
+		}
+	}
+	finalData := append(data, []byte(relaySB.String())...)
+	if err := os.WriteFile(outPath, finalData, 0o644); err != nil {
 		logger.Errorf("ExportLog: write %s failed: %v", outPath, err)
 		return apperr.Wrap(apperr.FileWrite, err)
 	}
-	logger.Infof("ExportLog: copied %d bytes -> %s", len(data), outPath)
+	logger.Infof("ExportLog: copied %d bytes (log=%d relay=%d) -> %s", len(finalData), len(data), len(finalData)-len(data), outPath)
 	return nil
 }
 
@@ -311,9 +408,25 @@ func (a *App) ActivateHost(worldPath string) error {
 	}
 	fromUID := palworld.SteamIDToPlayerUUID(sid)
 	logger.Infof("[%s] ActivateHost: start world=%s steamid=%d uid=%s -> host", op, guid, sid, fromUID)
+	beforeSnap := takeSnapshot(worldPath)
 	if err := palworld.ConvertHostWithoutBackup(worldPath, fromUID, palworld.HostUUID); err != nil {
 		logger.Errorf("[%s] ActivateHost: world=%s convert failed: %v", op, guid, err)
 		return apperr.Wrap(apperr.ConvertFailed, err)
+	// Record activate entry in relay history.
+	up := a.cfg.Uploader
+	if up == "" {
+		up = "player"
+	}
+	actEntry := relaylog.NewEntry("activate", a.version, up, guid)
+	actEntry.SteamID = sid
+	actEntry.RealUID = palworld.SteamIDToPlayerUUIDString(sid)
+	actEntry.Before = beforeSnap
+	actEntry.After = takeSnapshot(worldPath)
+	actEntry.Detail = &relaylog.Detail{
+		ConvertFrom: palworld.SteamIDToPlayerUUIDString(sid),
+		ConvertTo:   palworld.HostUUID.String(),
+	}
+	appendRelayEntry(guid, actEntry)
 	}
 	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
 		logger.Warnf("[%s] ActivateHost: prune backups failed: %v", op, err)
@@ -352,6 +465,7 @@ func (a *App) lockManager() (*storage.LockManager, error) {
 // packForTransfer packs the world as the transfer intermediate (read-only).
 // Returns the intermediate data without modifying the local world.
 func (a *App) packForTransfer(worldPath string) ([]byte, error) {
+	op := opID()
 	guid := filepath.Base(worldPath)
 
 	sid, err := steamIDFromPath(worldPath)
@@ -359,13 +473,49 @@ func (a *App) packForTransfer(worldPath string) ([]byte, error) {
 		return nil, err
 	}
 
-	logger.Infof("packForTransfer: world=%s packing intermediate (uid=%s)", guid, palworld.SteamIDToPlayerUUID(sid))
-	data, err := palworld.PackIntermediate(worldPath, palworld.SteamIDToPlayerUUID(sid))
+	realUID := palworld.SteamIDToPlayerUUID(sid)
+	beforeSnap := takeSnapshot(worldPath)
+	logger.Infof("[%s] packForTransfer: world=%s packing intermediate (uid=%s)", op, guid, realUID)
+
+	data, err := palworld.PackIntermediate(worldPath, realUID, nil)
 	if err != nil {
-		logger.Errorf("packForTransfer: world=%s pack intermediate failed: %v", guid, err)
+		logger.Errorf("[%s] packForTransfer: world=%s pack intermediate failed: %v", op, guid, err)
 		return nil, apperr.Wrap(apperr.PackFailed, err)
 	}
-	logger.Infof("packForTransfer: world=%s done (%d bytes)", guid, len(data))
+
+	// Build relay history entry and embed in the zip.
+	up := a.cfg.Uploader
+	if up == "" {
+		up = "player"
+	}
+	entry := relaylog.NewEntry("export", a.version, up, guid)
+	entry.SteamID = sid
+	entry.RealUID = palworld.SteamIDToPlayerUUIDString(sid)
+	entry.Before = beforeSnap
+	zipFiles := palworld.ListZipFiles(data)
+	localDataInZip := false
+	for _, f := range zipFiles {
+		if strings.EqualFold(filepath.Base(f), "LocalData.sav") {
+			localDataInZip = true
+			break
+		}
+	}
+	entry.Detail = &relaylog.Detail{
+		ZipFiles:       zipFiles,
+		ZipSize:        int64(len(data)),
+		LocalDataInZip: localDataInZip,
+	}
+	allEntries := appendRelayEntry(guid, entry)
+	// Re-pack with relay log embedded.
+	data, err = palworld.PackIntermediate(worldPath, realUID, map[string][]byte{
+		relayLogFilename: relaylog.Serialize(allEntries),
+	})
+	if err != nil {
+		logger.Errorf("[%s] packForTransfer: world=%s re-pack with relay log failed: %v", op, guid, err)
+		return nil, apperr.Wrap(apperr.PackFailed, err)
+	}
+
+	logger.Infof("[%s] packForTransfer: world=%s done (%d bytes)", op, guid, len(data))
 	return data, nil
 }
 
@@ -494,6 +644,9 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 		logger.Errorf("[%s] DownloadVersion: world=%s key=%s validation failed: %v", op, guid, key, err)
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
+	// Merge relay history from the downloaded zip into local.
+	mergeRelayFromZip(guid, buf.Bytes())
+	beforeSnap := takeSnapshot(worldPath)
 	logger.Infof("[%s] DownloadVersion: world=%s key=%s backing up", op, guid, key)
 	backupPath, err := palworld.BackupWorld(worldPath)
 	if err != nil {
@@ -510,6 +663,33 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 		return apperr.Wrap(apperr.ReplaceFailed, err)
 	}
 	a.repairDownloadedWorld(worldPath, guid, op)
+	// Record download entry in relay history.
+	dlSid, _ := steamIDFromPath(worldPath)
+	up := a.cfg.Uploader
+	if up == "" {
+		up = "player"
+	}
+	dlEntry := relaylog.NewEntry("download", a.version, up, guid)
+	if dlSid > 0 {
+		dlEntry.SteamID = dlSid
+		dlEntry.RealUID = palworld.SteamIDToPlayerUUIDString(dlSid)
+	}
+	dlEntry.Before = beforeSnap
+	dlEntry.After = takeSnapshot(worldPath)
+	zipFiles := palworld.ListZipFiles(buf.Bytes())
+	localDataInZip := false
+	for _, f := range zipFiles {
+		if strings.EqualFold(filepath.Base(f), "LocalData.sav") {
+			localDataInZip = true
+			break
+		}
+	}
+	dlEntry.Detail = &relaylog.Detail{
+		ZipFiles:       zipFiles,
+		ZipSize:        int64(buf.Len()),
+		LocalDataInZip: localDataInZip,
+	}
+	appendRelayEntry(guid, dlEntry)
 	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
 		logger.Warnf("[%s] DownloadVersion: prune backups failed: %v", op, err)
 	}
@@ -729,6 +909,9 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 		logger.Errorf("[%s] ImportWorld: world=%s validation failed: %v", op, guid, err)
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
+	// Merge relay history from the incoming zip into local.
+	mergeRelayFromZip(guid, data)
+	beforeSnap := takeSnapshot(worldPath)
 	backupPath, err := palworld.BackupWorld(worldPath)
 	if err != nil {
 		logger.Errorf("[%s] ImportWorld: world=%s backup failed: %v", op, guid, err)
@@ -745,6 +928,33 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 		return apperr.Wrap(apperr.ReplaceFailed, err)
 	}
 	a.repairDownloadedWorld(worldPath, guid, op)
+	// Record import entry in relay history.
+	sid, sidErr := steamIDFromPath(worldPath)
+	up := a.cfg.Uploader
+	if up == "" {
+		up = "player"
+	}
+	impEntry := relaylog.NewEntry("import", a.version, up, guid)
+	if sidErr == nil {
+		impEntry.SteamID = sid
+		impEntry.RealUID = palworld.SteamIDToPlayerUUIDString(sid)
+	}
+	impEntry.Before = beforeSnap
+	impEntry.After = takeSnapshot(worldPath)
+	zipFiles := palworld.ListZipFiles(data)
+	localDataInZip := false
+	for _, f := range zipFiles {
+		if strings.EqualFold(filepath.Base(f), "LocalData.sav") {
+			localDataInZip = true
+			break
+		}
+	}
+	impEntry.Detail = &relaylog.Detail{
+		ZipFiles:       zipFiles,
+		ZipSize:        int64(len(data)),
+		LocalDataInZip: localDataInZip,
+	}
+	appendRelayEntry(guid, impEntry)
 	if err := palworld.PruneBackups(worldPath, a.cfg.BackupKeep); err != nil {
 		logger.Warnf("[%s] ImportWorld: prune backups failed: %v", op, err)
 	}

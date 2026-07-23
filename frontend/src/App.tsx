@@ -655,11 +655,11 @@ function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate, flash }: { cfg: C
             https://github.com/Aues6uen11Z/palworld-save-relay
           </button>
         </p>
-        <div className="pt-1">
+        <div className="pt-1 flex gap-2">
           <button className="btn-ghost" onClick={onCheckUpdate}>
             {t("settings.checkUpdate")}
           </button>
-          <button className="btn-ghost mt-2" onClick={async () => {
+          <button className="btn-ghost" onClick={async () => {
             try {
               const out = await Dialogs.SaveFile({
                 Title: t("settings.exportLog"),

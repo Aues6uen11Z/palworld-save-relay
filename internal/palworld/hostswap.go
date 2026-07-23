@@ -105,7 +105,7 @@ func ConvertHostWithoutBackup(worldDir string, fromUID, toUID sav.UUID) error {
 //
 // Before packing, assertUploadReady is called to prevent producing a corrupt
 // intermediate from a world that was played without activating after download.
-func PackIntermediate(worldDir string, realUID sav.UUID) ([]byte, error) {
+func PackIntermediate(worldDir string, realUID sav.UUID, extraFiles map[string][]byte) ([]byte, error) {
 	if err := assertGameNotRunning(); err != nil {
 		return nil, err
 	}
@@ -138,6 +138,11 @@ func PackIntermediate(worldDir string, realUID sav.UUID) ([]byte, error) {
 	}
 	if err := convertHostImpl(dst, HostUUID, realUID); err != nil {
 		return nil, fmt.Errorf("convert temp copy: %w", err)
+	}
+	for name, data := range extraFiles {
+		if err := os.WriteFile(filepath.Join(dst, name), data, 0o644); err != nil {
+			logger.Warnf("PackIntermediate: failed to write extra file %s: %v", name, err)
+		}
 	}
 	return PackWorld(dst)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"palworld-save-relay/internal/sav"
 )
@@ -26,6 +27,9 @@ func ValidateWorldZip(zipBytes []byte) error {
 	foundLevel := false
 	for _, f := range zr.File {
 		name := filepath.ToSlash(f.Name)
+		if strings.HasPrefix(name, "_") {
+			continue // skip metadata files
+		}
 		if filepath.Ext(name) != ".sav" {
 			continue
 		}
