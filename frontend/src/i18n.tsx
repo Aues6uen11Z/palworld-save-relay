@@ -32,6 +32,27 @@ const dict: Dict = {
   "err.import": { zh: "导入失败: {0}", en: "Import failed: {0}" },
   "err.rename": { zh: "改名失败: {0}", en: "Rename failed: {0}" },
 
+  // User-friendly error messages keyed by backend error codes.
+  // parseErr() extracts [CODE] from the error string and looks up "errcode.CODE".
+  "errcode.GAME_RUNNING": { zh: "游戏正在运行中，请先关闭 Palworld", en: "Palworld is running. Please close the game first." },
+  "errcode.QINIU_CONFIG": { zh: "云服务未配置，请前往「设置」页填写七牛云配置", en: "Cloud service not configured. Set up Qiniu in Settings." },
+  "errcode.NO_CLOUD_VERSIONS": { zh: "云端没有可用的存档版本", en: "No cloud save versions available." },
+  "errcode.VALIDATION_FAILED": { zh: "存档文件校验失败，可能已损坏。请尝试重新下载或导入", en: "Save file validation failed, it may be corrupted. Try re-downloading or re-importing." },
+  "errcode.STEAMID_PARSE": { zh: "无法识别 Steam 账号信息，请检查存档目录是否正确", en: "Cannot identify Steam account. Please verify the save directory." },
+  "errcode.BACKUP_FAILED": { zh: "创建备份失败，操作已中止。可能是磁盘空间不足或文件被占用", en: "Backup creation failed, operation aborted. Disk may be full or files locked." },
+  "errcode.PACK_FAILED": { zh: "打包存档失败，存档文件可能损坏或缺失", en: "Failed to pack save. Save files may be corrupted or missing." },
+  "errcode.UPLOAD_FAILED": { zh: "上传到云端失败，请检查网络连接和云服务配置", en: "Upload to cloud failed. Check network connection and cloud config." },
+  "errcode.DOWNLOAD_FAILED": { zh: "从云端下载失败，请检查网络连接", en: "Download from cloud failed. Check your network connection." },
+  "errcode.CONVERT_FAILED": { zh: "房主转换失败，请重试。可从「备份」页回滚", en: "Host conversion failed. You can rollback from the Backups page." },
+  "errcode.STRIP_FAILED": { zh: "转为房客失败，已自动回滚，存档未受影响", en: "Failed to switch to guest. Automatically rolled back, save is unchanged." },
+  "errcode.STRIP_FATAL": { zh: "转为房客失败且回滚也失败，请从「备份」页手动恢复", en: "Failed to switch to guest and rollback also failed. Please restore manually from Backups." },
+  "errcode.REPLACE_FAILED": { zh: "替换存档失败，已自动回滚，存档未受影响", en: "Failed to replace save. Automatically rolled back, save is unchanged." },
+  "errcode.REPLACE_FATAL": { zh: "替换存档失败且回滚也失败，请从「备份」页手动恢复", en: "Failed to replace save and rollback also failed. Please restore manually from Backups." },
+  "errcode.RESTORE_FAILED": { zh: "回滚失败，已自动恢复到操作前状态", en: "Restore failed. Automatically recovered to pre-operation state." },
+  "errcode.RESTORE_FATAL": { zh: "回滚失败且自动恢复也失败，请联系支持并保留备份文件", en: "Restore failed and auto-recovery also failed. Please contact support and keep backup files." },
+  "errcode.FILE_WRITE": { zh: "写入文件失败，请检查磁盘空间和路径权限", en: "Failed to write file. Check disk space and path permissions." },
+  "errcode.FILE_READ": { zh: "读取文件失败，请确认文件存在且未损坏", en: "Failed to read file. Confirm the file exists and is not corrupted." },
+
   "toast.configSaved": { zh: "配置已保存", en: "Config saved" },
   "toast.versionDownloaded": { zh: "已下载该版本", en: "Version downloaded" },
   "toast.rolledBack": { zh: "已回滚", en: "Rolled back" },
@@ -141,6 +162,8 @@ const dict: Dict = {
   "settings.upToDate": { zh: "已是最新版本", en: "Up to date" },
   "settings.updateMessage": { zh: "发现新版本，建议立即更新。", en: "A new version is available. Update recommended." },
   "settings.later": { zh: "稍后", en: "Later" },
+  "settings.exportLog": { zh: "导出日志", en: "Export Log" },
+  "toast.logExported": { zh: "日志已导出", en: "Log exported" },
 
   "lang.switch": { zh: "English", en: "中文" },
 };
@@ -189,4 +212,19 @@ export function useI18n(): I18nCtx {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("useI18n must be used within LangProvider");
   return ctx;
+}
+
+// parseErr extracts a backend error code ([CODE] detail) and maps it to a
+// localized user-friendly message. If no code is found or the code is unknown,
+// falls back to the raw error string.
+export function parseErr(e: unknown, t: (key: string, ...args: (string | number)[]) => string): string {
+  const raw = String((e as any)?.message || e);
+  const m = raw.match(/^\[(\w+)\]\s*(.*)/s);
+  if (m) {
+    const key = "errcode." + m[1];
+    const friendly = t(key);
+    if (friendly !== key) return friendly;
+    return m[2] || raw;
+  }
+  return raw;
 }

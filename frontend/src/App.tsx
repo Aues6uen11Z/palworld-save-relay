@@ -5,7 +5,7 @@ import type { World, BackupRecord } from "../bindings/palworld-save-relay/models
 import type { Player } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { SteamAccount } from "../bindings/palworld-save-relay/internal/palworld/models";
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
-import { useI18n, type Lang } from "./i18n";
+import { parseErr, useI18n, type Lang } from "./i18n";
 
 type View = "worlds" | "cloud" | "backups" | "settings";
 
@@ -70,7 +70,7 @@ export default function AppView() {
                 await App.DoUpdate(info.downloadUrl);
                 await App.QuitApp();
               } catch (e: any) {
-                flash("err", String(e?.message || e));
+                flash("err", parseErr(e, t));
                 setModal(null);
               }
             } else {
@@ -82,7 +82,7 @@ export default function AppView() {
         flash("ok", t("settings.upToDate"));
       }
     } catch (e: any) {
-      if (!silent) flash("err", String(e?.message || e));
+      if (!silent) flash("err", parseErr(e, t));
     }
   };
 
@@ -93,10 +93,22 @@ export default function AppView() {
       setWorlds(ws || []);
       // DetectWorlds may self-heal a stale steam_id; re-sync config.
       try { const c = await App.GetConfig(); if (c) setCfg(c); } catch {}
-      if (ws && ws.length && !selWorld) setSelWorld(ws[0]);
-    } catch (e: any) {
-      setDetectErr(String(e?.message || e));
-      flash("err", t("err.detectWorlds", String(e?.message || e)));
+      // After a Steam account switch the world list changes, but selWorld still
+      // holds the old account path. Re-bind to the matching world by GUID so
+      // import/export/activate operate on the correct folder. If the GUID is
+      // not found in the new list, fall back to the first world.
+      if (ws && ws.length) {
+        if (selWorld) {
+          const match = ws.find((w) => w.GUID === selWorld.GUID);
+          if (match && match.Path !== selWorld.Path) setSelWorld(match);
+          else if (!match) setSelWorld(ws[0]);
+        } else {
+          setSelWorld(ws[0]);
+        }
+      }
+      } catch (e: any) {
+      setDetectErr(parseErr(e, t));
+      flash("err", parseErr(e, t));
     }
     try { setSaveRoot(await App.ResolvedSaveRoot()); } catch {}
     try { setSteamAccounts(await App.ListSteamAccounts()); } catch {}
@@ -108,7 +120,7 @@ export default function AppView() {
         const c = await App.GetConfig();
         if (c) setCfg(c);
       } catch (e: any) {
-        flash("err", t("err.loadConfig", String(e?.message || e)));
+        flash("err", parseErr(e, t));
       }
       await refreshWorlds();
       setReady(true);
@@ -144,7 +156,7 @@ export default function AppView() {
     try {
       setPlayers((await App.ListPlayers(w.Path)) || []);
     } catch (e: any) {
-      flash("err", String(e?.message || e));
+      flash("err", parseErr(e, t));
     }
   };
 
@@ -177,7 +189,7 @@ export default function AppView() {
       }
       return true;
     } catch (e: any) {
-      flash("err", t("common.failed", label, String(e?.message || e)));
+      flash("err", parseErr(e, t));
       return false;
     } finally {
       setBusy(false);
@@ -235,7 +247,6 @@ export default function AppView() {
       });
     }
   };
-  const needsConfig = !cfg?.qiniu?.access_key || !cfg?.qiniu?.bucket;
 
   const titleFor = (v: View) =>
     ({ worlds: t("title.worlds"), cloud: t("title.cloud"), backups: t("title.backups"), settings: t("title.settings") }[v]);
@@ -259,14 +270,6 @@ export default function AppView() {
 
         <div className="flex-1 overflow-auto">
           <div className="p-6 max-w-4xl">
-          {needsConfig && view !== "settings" && (
-            <div className="card p-4 mb-4 border-amber-200 bg-amber-50">
-              <p className="text-sm text-amber-800">
-                {t("warn.noCloud")}
-              </p>
-            </div>
-          )}
-
           {view === "worlds" && (
             <WorldsView
               worlds={worlds}
@@ -297,7 +300,7 @@ export default function AppView() {
                   });
                   if (!out) return;
                   await run(t("dialog.exportTitle"), () => App.ExportWorld(selWorld!.Path, out));
-                } catch (e: any) { flash("err", t("err.export", String(e?.message || e))); }
+                } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
               }}
               onImport={async () => {
                 if (!selWorld) return;
@@ -312,15 +315,15 @@ export default function AppView() {
                     await App.ImportWorld(inPath, selWorld!.Path);
                     await App.ActivateHost(selWorld!.Path);
                   });
-                } catch (e: any) { flash("err", t("err.import", String(e?.message || e))); }
+                } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
               }}
-              onAlias={(guid, alias) => { App.SetWorldMeta(guid, alias, selWorld?.hidden ?? false).then(() => refreshWorlds()).catch((e: any) => flash("err", t("err.rename", String(e?.message || e)))); }}
+              onAlias={(guid, alias) => { App.SetWorldMeta(guid, alias, selWorld?.hidden ?? false).then(() => refreshWorlds()).catch((e: any) => flash("err", parseErr(e, t))); }}
             />
           )}
           {view === "cloud" && <CloudView world={selWorld} busy={busy} onDownloadActivate={(k) => handleDownloadActivate(k)} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} onRestore={(name) => { if (selWorld) run(t("backups.restore"), () => App.RestoreBackup(selWorld.Path, name), t("toast.rolledBack")); }} />}
           {view === "settings" && (
-            <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} onCheckUpdate={() => checkUpdate(false)} />
+            <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} onCheckUpdate={() => checkUpdate(false)} flash={flash} />
           )}
           </div>
         </div>
@@ -579,7 +582,7 @@ function CloudView({ world, busy, onDownloadActivate }: { world: World | null; b
 function BackupsView({ world, busy, flash, onRestore }: { world: World | null; busy: boolean; flash: (k: "ok" | "err", m: string) => void; onRestore: (name: string) => void }) {
   const { t } = useI18n();
   const [backups, setBackups] = useState<BackupRecord[]>([]);
-  const load = () => { if (world) App.ListBackups(world.Path).then(setBackups).catch((e) => flash("err", String(e))); };
+  const load = () => { if (world) App.ListBackups(world.Path).then(setBackups).catch((e: any) => flash("err", parseErr(e, t))); };
   useEffect(load, [world?.Path]);
   if (!world) return <p className="text-sm text-gray-500">{t("backups.selectFirst")}</p>;
   return (
@@ -606,7 +609,7 @@ function BackupsView({ world, busy, flash, onRestore }: { world: World | null; b
   );
 }
 
-function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate }: { cfg: Config; autoRoot: string; onSaved: (c: Config) => void; onCheckUpdate: () => void }) {
+function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate, flash }: { cfg: Config; autoRoot: string; onSaved: (c: Config) => void; onCheckUpdate: () => void; flash: (k: "ok" | "err", m: string) => void }) {
   const { t } = useI18n();
   const [q, setQ] = useState(cfg.qiniu || ({} as any));
   const [uploader, setUploader] = useState(cfg.uploader || "");
@@ -656,6 +659,18 @@ function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate }: { cfg: Config; 
           <button className="btn-ghost" onClick={onCheckUpdate}>
             {t("settings.checkUpdate")}
           </button>
+          <button className="btn-ghost mt-2" onClick={async () => {
+            try {
+              const out = await Dialogs.SaveFile({
+                Title: t("settings.exportLog"),
+                Filename: "palrelay-log.txt",
+                Filters: [{ DisplayName: "Text", Pattern: "*.txt" }],
+              });
+              if (!out) return;
+              await App.ExportLog(out);
+              flash("ok", t("toast.logExported"));
+            } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
+          }}>{"📄 " + t("settings.exportLog")}</button>
         </div>
       </div>
     </div>
