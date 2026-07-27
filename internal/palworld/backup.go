@@ -51,7 +51,7 @@ func BackupWorld(worldDir string) (string, error) {
 	if fileExists(filepath.Join(worldDir, "Level.sav")) {
 		role = "host"
 	}
-	name := time.Now().Format("2006-01-02_150405") + "_" + role + ".zip"
+	name := time.Now().Format("2006-01-02_150405") + "_" + guid + "_" + role + ".zip"
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		logger.Errorf("BackupWorld: world=%s write failed: %v", guid, err)

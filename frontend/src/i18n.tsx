@@ -39,6 +39,8 @@ const dict: Dict = {
   "errcode.NO_CLOUD_VERSIONS": { zh: "云端没有可用的存档版本", en: "No cloud save versions available." },
   "errcode.VALIDATION_FAILED": { zh: "存档文件校验失败，可能已损坏。请尝试重新下载或导入", en: "Save file validation failed, it may be corrupted. Try re-downloading or re-importing." },
   "errcode.RAW_HOST_SAVE": { zh: "这是完整的主机存档或备份，不是可中转的存档。它仍带有房主哨兵标识，导入后激活会覆盖原房主数据。请让对方用「导出存档」或「上传」生成 .palrelay.zip，再导入那个文件", en: "This is a raw host save/backup, not a relay intermediate. It still carries the host sentinel; activating after import would overwrite the former host's data. Have the host use Export/Upload to produce a .palrelay.zip and import that instead." },
+  "errcode.WORLD_MISMATCH": { zh: "这个存档属于另一个世界，和当前世界不一致。请确认双方操作的是同一个世界的存档", en: "This save belongs to a different world than the selected one. Make sure both sides are operating on the same world." },
+  "errcode.WORLD_UNKNOWN": { zh: "无法确认存档所属世界（缺少中转记录）。请让对方重新用「导出」或「上传」生成存档", en: "Cannot verify which world this save belongs to (no relay record). Ask the other side to re-export or re-upload the save." },
   "errcode.STEAMID_PARSE": { zh: "无法识别 Steam 账号信息，请检查存档目录是否正确", en: "Cannot identify Steam account. Please verify the save directory." },
   "errcode.BACKUP_FAILED": { zh: "创建备份失败，操作已中止。可能是磁盘空间不足或文件被占用", en: "Backup creation failed, operation aborted. Disk may be full or files locked." },
   "errcode.PACK_FAILED": { zh: "打包存档失败，存档文件可能损坏或缺失", en: "Failed to pack save. Save files may be corrupted or missing." },

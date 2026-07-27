@@ -14,6 +14,8 @@ const (
 	NoCloudVersions Code = "NO_CLOUD_VERSIONS"
 	ValidationFail  Code = "VALIDATION_FAILED"
 	RawHostSave     Code = "RAW_HOST_SAVE"
+	WorldMismatch   Code = "WORLD_MISMATCH"
+	WorldUnknown    Code = "WORLD_UNKNOWN"
 	SteamIDParse    Code = "STEAMID_PARSE"
 	BackupFailed    Code = "BACKUP_FAILED"
 	PackFailed      Code = "PACK_FAILED"

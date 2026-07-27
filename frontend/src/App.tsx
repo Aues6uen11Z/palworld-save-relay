@@ -21,6 +21,13 @@ function defaultConfig(): Config {
   } as unknown as Config;
 }
 
+function relayFileName(guid: string): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const ts = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  return `${ts}_${guid}_relay.zip`;
+}
+
 export default function AppView() {
   const { t, lang } = useI18n();
   const [view, setView] = useState<View>("worlds");
@@ -295,8 +302,8 @@ export default function AppView() {
                 try {
                   const out = await Dialogs.SaveFile({
                     Title: t("dialog.exportTitle"),
-                    Filename: `${selWorld.GUID}.palrelay.zip`,
-                    Filters: [{ DisplayName: t("dialog.savePkg"), Pattern: "*.palrelay.zip" }],
+                    Filename: relayFileName(selWorld.GUID),
+                    Filters: [{ DisplayName: t("dialog.savePkg"), Pattern: "*.zip" }],
                   });
                   if (!out) return;
                   await run(t("dialog.exportTitle"), () => App.ExportWorld(selWorld!.Path, out));
@@ -307,7 +314,7 @@ export default function AppView() {
                 try {
                   const res = await Dialogs.OpenFile({
                     Title: t("dialog.importTitle"),
-                    Filters: [{ DisplayName: t("dialog.savePkg"), Pattern: "*.palrelay.zip;*.zip" }],
+                    Filters: [{ DisplayName: t("dialog.savePkg"), Pattern: "*.zip" }],
                   });
                   const inPath = Array.isArray(res) ? (res[0] || "") : (res || "");
                   if (!inPath) return;

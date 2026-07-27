@@ -113,6 +113,23 @@ func mergeRelayFromZip(guid string, zipBytes []byte) []relaylog.Entry {
 	return local
 }
 
+
+// sourceGUIDFromZip reads the embedded relay log from a transfer zip and
+// returns the source world GUID recorded in it. Returns false when the zip
+// carries no relay log, i.e. it is not a properly-generated relay intermediate
+// and its world identity cannot be verified.
+func sourceGUIDFromZip(zipBytes []byte) (string, bool) {
+	data, ok := palworld.ReadFileFromZip(zipBytes, relayLogFilename)
+	if !ok {
+		return "", false
+	}
+	for _, e := range relaylog.Deserialize(data) {
+		if e.GUID != "" {
+			return e.GUID, true
+		}
+	}
+	return "", false
+}
 // NewApp creates the App service, loading persisted config.
 func NewApp(version string) *App {
 	cfg, err := config.Load()
@@ -648,6 +665,15 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 		}
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
+	srcGUID, ok := sourceGUIDFromZip(buf.Bytes())
+	if !ok {
+		logger.Errorf("[%s] DownloadVersion: world=%s no relay log; cannot verify world identity", op, guid)
+		return apperr.New(apperr.WorldUnknown, "")
+	}
+	if !strings.EqualFold(srcGUID, guid) {
+		logger.Errorf("[%s] DownloadVersion: world=%s world mismatch: zip belongs to %s", op, guid, srcGUID)
+		return apperr.New(apperr.WorldMismatch, "zip="+srcGUID+" target="+guid)
+	}
 	// Merge relay history from the downloaded zip into local.
 	mergeRelayFromZip(guid, buf.Bytes())
 	beforeSnap := takeSnapshot(worldPath)
@@ -860,7 +886,7 @@ func (a *App) RestoreBackup(worldPath, name string) error {
 // ---------- import/export ----------
 
 // ExportWorld packs the world as the transfer intermediate and writes it to a
-// .palrelay.zip at outPath. After a successful export the local world is
+// _relay.zip at outPath. After a successful export the local world is
 // stripped to guest - identical semantics to cloud upload minus the network.
 // ExportWorld packs the world, writes to file, then strips to guest.
 // Atomic: if write fails, world is untouched. If strip fails, rolls back.
@@ -892,7 +918,7 @@ func (a *App) ExportWorld(worldPath, outPath string) error {
 	return nil
 }
 
-// ImportWorld unpacks a .palrelay.zip into worldPath (after backup). The zip is
+// ImportWorld unpacks a _relay.zip into worldPath (after backup). The zip is
 // validated before the local world is touched, then the world is cleanly
 // replaced (preserving LocalData.sav). If the replace fails, the backup is used
 // to roll back automatically.
@@ -915,6 +941,15 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 			return apperr.New(apperr.RawHostSave, "")
 		}
 		return apperr.Wrap(apperr.ValidationFail, err)
+	}
+	srcGUID, ok := sourceGUIDFromZip(data)
+	if !ok {
+		logger.Errorf("[%s] ImportWorld: world=%s no relay log in zip; cannot verify world identity", op, guid)
+		return apperr.New(apperr.WorldUnknown, "")
+	}
+	if !strings.EqualFold(srcGUID, guid) {
+		logger.Errorf("[%s] ImportWorld: world=%s world mismatch: zip belongs to %s", op, guid, srcGUID)
+		return apperr.New(apperr.WorldMismatch, "zip="+srcGUID+" target="+guid)
 	}
 	// Merge relay history from the incoming zip into local.
 	mergeRelayFromZip(guid, data)
