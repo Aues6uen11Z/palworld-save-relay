@@ -1,6 +1,7 @@
 package palworld
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -291,5 +292,29 @@ func TestPruneBackups_NoBackupsIsNoop(t *testing.T) {
 
 	if err := PruneBackups(worldDir, 5); err != nil {
 		t.Fatalf("PruneBackups with no backups should not error: %v", err)
+	}
+}
+
+func TestValidateWorldZip_RawHostSaveRejected(t *testing.T) {
+	dir := t.TempDir()
+	levelData := readSavFixtureX(t, "level_plm.sav")
+	if len(levelData) == 0 {
+		return // fixture skipped
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Level.sav"), levelData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A raw host save/backup still carries the host sentinel (0001) player file,
+	// which a proper relay intermediate never does. ValidateWorldZip must reject it.
+	playersDir := filepath.Join(dir, "Players")
+	os.MkdirAll(playersDir, 0o755)
+	sentinel := filepath.Join(playersDir, uidFilename(HostUUID))
+	os.WriteFile(sentinel, []byte("sentinel-player"), 0o644)
+	zipBytes, err := PackWorld(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateWorldZip(zipBytes); !errors.Is(err, ErrRawHostSave) {
+		t.Fatalf("expected ErrRawHostSave, got %v", err)
 	}
 }

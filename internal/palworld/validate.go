@@ -3,6 +3,7 @@ package palworld
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -10,6 +11,14 @@ import (
 
 	"palworld-save-relay/internal/sav"
 )
+
+// ErrRawHostSave is returned by ValidateWorldZip when the zip still carries the
+// host sentinel (0001) player file. A proper relay intermediate never does -
+// PackIntermediate converts the sentinel to the host's real UID - so its
+// presence means the zip is a raw host save/backup, not a transferable
+// intermediate. Importing it and then activating would collide the sentinel and
+// silently destroy the former host's player data.
+var ErrRawHostSave = errors.New("raw host save: contains host sentinel player file; use a relay intermediate produced by export/upload, not a backup")
 
 // ValidateWorldZip checks that a world zip is well-formed without touching the
 // filesystem. It verifies the zip can be read, and that every .sav file inside
@@ -25,6 +34,7 @@ func ValidateWorldZip(zipBytes []byte) error {
 	}
 	hints, custom := sav.PalWorldConfig()
 	foundLevel := false
+	sentinelFile := "Players/" + uidFilename(HostUUID)
 	for _, f := range zr.File {
 		name := filepath.ToSlash(f.Name)
 		if strings.HasPrefix(name, "_") {
@@ -35,6 +45,11 @@ func ValidateWorldZip(zipBytes []byte) error {
 		}
 		if name == "Level.sav" {
 			foundLevel = true
+		}
+		// Reject raw host saves/backups: a real intermediate never contains the
+		// host sentinel player file (PackIntermediate converts it away).
+		if strings.EqualFold(name, sentinelFile) {
+			return ErrRawHostSave
 		}
 		if err := validateSAVEntry(f, hints, custom); err != nil {
 			return err

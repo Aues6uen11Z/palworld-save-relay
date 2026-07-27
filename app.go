@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -642,6 +643,9 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 	}
 	if err := palworld.ValidateWorldZip(buf.Bytes()); err != nil {
 		logger.Errorf("[%s] DownloadVersion: world=%s key=%s validation failed: %v", op, guid, key, err)
+		if errors.Is(err, palworld.ErrRawHostSave) {
+			return apperr.New(apperr.RawHostSave, "")
+		}
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
 	// Merge relay history from the downloaded zip into local.
@@ -907,6 +911,9 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	}
 	if err := palworld.ValidateWorldZip(data); err != nil {
 		logger.Errorf("[%s] ImportWorld: world=%s validation failed: %v", op, guid, err)
+		if errors.Is(err, palworld.ErrRawHostSave) {
+			return apperr.New(apperr.RawHostSave, "")
+		}
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
 	// Merge relay history from the incoming zip into local.
