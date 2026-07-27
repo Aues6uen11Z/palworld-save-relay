@@ -665,15 +665,6 @@ func (a *App) DownloadVersion(worldPath, key string) error {
 		}
 		return apperr.Wrap(apperr.ValidationFail, err)
 	}
-	srcGUID, ok := sourceGUIDFromZip(buf.Bytes())
-	if !ok {
-		logger.Errorf("[%s] DownloadVersion: world=%s no relay log; cannot verify world identity", op, guid)
-		return apperr.New(apperr.WorldUnknown, "")
-	}
-	if !strings.EqualFold(srcGUID, guid) {
-		logger.Errorf("[%s] DownloadVersion: world=%s world mismatch: zip belongs to %s", op, guid, srcGUID)
-		return apperr.New(apperr.WorldMismatch, "zip="+srcGUID+" target="+guid)
-	}
 	// Merge relay history from the downloaded zip into local.
 	mergeRelayFromZip(guid, buf.Bytes())
 	beforeSnap := takeSnapshot(worldPath)
