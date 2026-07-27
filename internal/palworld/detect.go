@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"palworld-save-relay/internal/logger"
@@ -105,9 +106,18 @@ func countPlayers(playersDir string) int {
 	}
 	n := 0
 	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".sav" {
-			n++
+		if e.IsDir() {
+			continue
 		}
+		name := e.Name()
+		if filepath.Ext(name) != ".sav" {
+			continue
+		}
+		// Exclude Pal Dimension Storage (_dps.sav); count only player saves.
+		if strings.HasSuffix(name, "_dps.sav") {
+			continue
+		}
+		n++
 	}
 	return n
 }

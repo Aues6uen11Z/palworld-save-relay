@@ -148,7 +148,7 @@ const dict: Dict = {
   "settings.qiniu": { zh: "七牛云 Kodo", en: "Qiniu Kodo" },
   "settings.accessKey": { zh: "AccessKey", en: "AccessKey" },
   "settings.secretKey": { zh: "SecretKey", en: "SecretKey" },
-  "settings.bucket": { zh: "Bucket", en: "Bucket" },
+  "settings.bucket": { zh: "空间名称", en: "Bucket" },
   "settings.domain": { zh: "下载域名（留空自动获取）", en: "Download domain (leave blank for auto)" },
   "settings.general": { zh: "通用", en: "General" },
   "settings.uploader": { zh: "上传者名（标识版本）", en: "Uploader name (identifies versions)" },
