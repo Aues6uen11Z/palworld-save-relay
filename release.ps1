@@ -56,7 +56,7 @@ Write-Output "  binary: $(if ($result -match '"id"') {'OK'} else {$result})"
 # 6. Verify.
 Write-Output "`n=== Verify ==="
 $gv = curl.exe -sL "https://gitee.com/$owner/$repo/raw/master/version.txt" 2>&1
-$ghv = curl.exe -sL "https://raw.githubusercontent.com/Aues6uen11Z/$repo/main/version.txt" 2>&1
+$ghv = curl.exe -sL "https://raw.githubusercontent.com/Aues6uen11Z/$repo/master/version.txt" 2>&1
 Write-Output "Gitee raw version.txt:  $gv"
 Write-Output "GitHub raw version.txt: $ghv"
 Write-Output "`nDone!"
