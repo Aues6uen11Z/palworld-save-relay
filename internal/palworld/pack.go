@@ -11,13 +11,13 @@ import (
 	"palworld-save-relay/internal/logger"
 )
 
-// isWorldSaveFile reports whether relpath (forward-slash, relative to the
+// IsWorldSaveFile reports whether relpath (forward-slash, relative to the
 // world dir) is a legitimate Palworld world save file: a top-level Level.sav,
 // LevelMeta.sav, WorldOption.sav, or LocalData.sav, or a .sav directly under
 // Players/. Everything else - backup/ and world_save_bak/ dirs, stray zip
 // files, nested relay packages, _-prefixed metadata - is excluded so it
 // neither bloats transfers nor pollutes the target world.
-func isWorldSaveFile(relpath string) bool {
+func IsWorldSaveFile(relpath string) bool {
 	relpath = filepath.ToSlash(relpath)
 	switch relpath {
 	case "Level.sav", "LevelMeta.sav", "WorldOption.sav", "LocalData.sav":
@@ -60,7 +60,7 @@ func PackWorld(worldDir string) ([]byte, error) {
 		// Whitelist: pack only world save files + relay metadata (_-prefixed).
 		// Strays (world_save_bak/, nested zips, etc.) never enter a transfer.
 		rel = filepath.ToSlash(rel)
-		if !isWorldSaveFile(rel) && !strings.HasPrefix(rel, "_") {
+		if !IsWorldSaveFile(rel) && !strings.HasPrefix(rel, "_") {
 			return nil
 		}
 		w, err := zw.Create(rel)
@@ -113,7 +113,7 @@ func UnpackWorld(zipBytes []byte, destDir string) error {
 		name := filepath.ToSlash(f.Name)
 		// Whitelist: unpack only world save files. Relay metadata (_-prefixed)
 		// and strays (world_save_bak/, nested zips) are skipped.
-		if !isWorldSaveFile(name) {
+		if !IsWorldSaveFile(name) {
 			continue
 		}
 		outPath := filepath.Join(destDir, filepath.FromSlash(f.Name))

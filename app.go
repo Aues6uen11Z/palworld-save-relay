@@ -1,8 +1,10 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -345,42 +347,168 @@ func (a *App) GetVersion() string {
 // ExportLog copies the current log file to outPath so the user can share it
 // for troubleshooting. If the log file does not exist (e.g. APPDATA unset),
 // returns an error.
-func (a *App) ExportLog(outPath string) error {
-	src := logger.DefaultPath()
-	if src == "" {
-		logger.Warn("ExportLog: no log path (APPDATA unset)")
-		return fmt.Errorf("log file not available")
+// diagFileEntry is one file in the diagnostic snapshot's file list.
+type diagFileEntry struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// diagPlayer is one player in the diagnostic snapshot.
+type diagPlayer struct {
+	UID        string `json:"uid"`
+	InstanceID string `json:"instanceId"`
+	Name       string `json:"name"`
+	IsHost     bool   `json:"isHost"`
+}
+
+// DiagnosticSnapshot is a structured summary of a world's current state, embedded
+// in the diagnostic bundle so issues can be located without parsing .sav files:
+// players (with InstanceIds), the full file list (including strays such as
+// world_save_bak/), and the backup list.
+type DiagnosticSnapshot struct {
+	GUID         string          `json:"guid"`
+	IsHost       bool            `json:"isHost"`
+	HasLocalData bool            `json:"hasLocalData"`
+	HasLevelMeta bool            `json:"hasLevelMeta"`
+	PalCount     int             `json:"palCount"`
+	Players      []diagPlayer    `json:"players"`
+	Files        []diagFileEntry `json:"files"`
+	StrayFiles   []string        `json:"strayFiles"`
+	Backups      []BackupRecord  `json:"backups"`
+}
+
+// buildDiagnosticSnapshot walks worldPath and produces a structured summary of
+// its current state. The file list includes EVERY file (so strays such as
+// world_save_bak/ are visible) except the game's own backup/ autosave dir,
+// which is noisy and irrelevant.
+func buildDiagnosticSnapshot(worldPath string, backups []BackupRecord) DiagnosticSnapshot {
+	guid := filepath.Base(worldPath)
+	snap := DiagnosticSnapshot{GUID: guid, Backups: backups}
+	filepath.Walk(worldPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if strings.EqualFold(filepath.Base(path), "backup") {
+				return filepath.SkipDir // skip game autosaves (noisy)
+			}
+			return nil
+		}
+		rel, _ := filepath.Rel(worldPath, path)
+		rel = filepath.ToSlash(rel)
+		snap.Files = append(snap.Files, diagFileEntry{Name: rel, Size: info.Size()})
+		if !palworld.IsWorldSaveFile(rel) {
+			snap.StrayFiles = append(snap.StrayFiles, rel)
+		}
+		return nil
+	})
+	if _, err := os.Stat(filepath.Join(worldPath, "LocalData.sav")); err == nil {
+		snap.HasLocalData = true
 	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		logger.Errorf("ExportLog: read %s failed: %v", src, err)
-		return fmt.Errorf("log file not found: %w", err)
+	if _, err := os.Stat(filepath.Join(worldPath, "LevelMeta.sav")); err == nil {
+		snap.HasLevelMeta = true
 	}
-	// Append relay history for all worlds.
-	var relaySB strings.Builder
-	relaySB.WriteString("\n\n=== Relay History ===\n")
-	appData := os.Getenv("APPDATA")
-	if appData != "" {
-		relayDir := filepath.Join(appData, "PalSaveRelay")
-		if entries, err := os.ReadDir(relayDir); err == nil {
-			for _, e := range entries {
-				if !strings.HasPrefix(e.Name(), "relay-log-") || !strings.HasSuffix(e.Name(), ".jsonl") {
-					continue
-				}
-				guid := strings.TrimSuffix(strings.TrimPrefix(e.Name(), "relay-log-"), ".jsonl")
-				relaySB.WriteString("\n--- World " + guid + " ---\n")
-				if rd, err := os.ReadFile(filepath.Join(relayDir, e.Name())); err == nil {
-					relaySB.Write(rd)
-				}
+	if _, err := os.Stat(filepath.Join(worldPath, "Level.sav")); err == nil {
+		snap.IsHost = true
+		if players, err := palworld.ListPlayers(worldPath); err == nil {
+			for _, p := range players {
+				snap.Players = append(snap.Players, diagPlayer{
+					UID: p.UID, InstanceID: p.InstanceID, Name: p.NickName, IsHost: p.IsHost,
+				})
 			}
 		}
+		if n, err := palworld.PalCount(worldPath); err == nil {
+			snap.PalCount = n
+		}
 	}
-	finalData := append(data, []byte(relaySB.String())...)
-	if err := os.WriteFile(outPath, finalData, 0o644); err != nil {
-		logger.Errorf("ExportLog: write %s failed: %v", outPath, err)
+	return snap
+}
+
+// selectDiagnosticBackups picks the oldest plus the two newest backups (deduped)
+// so the bundle carries both the original state and the recent evolution.
+// ListBackups returns backups newest-first.
+func selectDiagnosticBackups(backups []BackupRecord) []BackupRecord {
+	if len(backups) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []BackupRecord
+	add := func(b BackupRecord) {
+		if !seen[b.Name] {
+			seen[b.Name] = true
+			out = append(out, b)
+		}
+	}
+	add(backups[len(backups)-1]) // oldest (original state)
+	for i := 0; i < 2 && i < len(backups); i++ {
+		add(backups[i]) // two newest
+	}
+	return out
+}
+
+// ExportDiagnosticBundle builds a diagnostic zip for a world, bundling
+// everything needed to diagnose an issue in one file: the app log, the world's
+// relay history, a structured snapshot of the current state (snapshot.json),
+// the current world save (whitelisted), and the oldest + two newest backups.
+// It replaces the old ExportLog (log-only), since a log alone rarely suffices.
+func (a *App) ExportDiagnosticBundle(worldPath, outPath string) error {
+	guid := filepath.Base(worldPath)
+	backups, _ := a.ListBackups(worldPath)
+	snap := buildDiagnosticSnapshot(worldPath, backups)
+	snapBytes, _ := json.MarshalIndent(snap, "", "  ")
+
+	out, err := os.Create(outPath)
+	if err != nil {
+		logger.Errorf("ExportDiagnosticBundle: world=%s create %s failed: %v", guid, outPath, err)
 		return apperr.Wrap(apperr.FileWrite, err)
 	}
-	logger.Infof("ExportLog: copied %d bytes (log=%d relay=%d) -> %s", len(finalData), len(data), len(finalData)-len(data), outPath)
+	defer out.Close()
+	zw := zip.NewWriter(out)
+	addBytes := func(name string, data []byte) {
+		if w, err := zw.Create(name); err == nil {
+			w.Write(data)
+		}
+	}
+	addFile := func(name, path string) {
+		if data, err := os.ReadFile(path); err == nil {
+			addBytes(name, data)
+		}
+	}
+
+	// app.log (global operation log).
+	if lp := logger.DefaultPath(); lp != "" {
+		addFile("app.log", lp)
+	}
+	// relay history for this world.
+	if rp := relaylog.LogPath(guid); rp != "" {
+		addFile("relay-"+guid+".jsonl", rp)
+	}
+	// structured current-state snapshot.
+	addBytes("snapshot.json", snapBytes)
+	// current world save (whitelisted only - no strays).
+	filepath.Walk(worldPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(worldPath, path)
+		rel = filepath.ToSlash(rel)
+		if !palworld.IsWorldSaveFile(rel) {
+			return nil
+		}
+		addFile("world/"+rel, path)
+		return nil
+	})
+	// oldest + two newest backups.
+	bdir, _ := palworld.BackupDir()
+	for _, b := range selectDiagnosticBackups(backups) {
+		addFile("backups/"+b.Name, filepath.Join(bdir, guid, b.Name))
+	}
+
+	if err := zw.Close(); err != nil {
+		logger.Errorf("ExportDiagnosticBundle: world=%s close failed: %v", guid, err)
+		return apperr.Wrap(apperr.FileWrite, err)
+	}
+	logger.Infof("ExportDiagnosticBundle: world=%s -> %s (backups=%d)", guid, outPath, len(backups))
 	return nil
 }
 

@@ -31,8 +31,8 @@ func TestIsWorldSaveFile(t *testing.T) {
 		{"", false},
 	}
 	for _, c := range cases {
-		if got := isWorldSaveFile(c.path); got != c.want {
-			t.Errorf("isWorldSaveFile(%q) = %v, want %v", c.path, got, c.want)
+		if got := IsWorldSaveFile(c.path); got != c.want {
+			t.Errorf("IsWorldSaveFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }

@@ -130,6 +130,9 @@ const dict: Dict = {
   },
   "worlds.btnExport": { zh: "📤 导出存档", en: "📤 Export Save" },
   "worlds.btnImport": { zh: "📥 导入存档", en: "📥 Import Save" },
+  "worlds.exportDiag": { zh: "🩺 导出诊断包", en: "🩺 Export Diagnostics" },
+  "worlds.diagTitle": { zh: "诊断", en: "Diagnostics" },
+  "worlds.diagDesc": { zh: "导出当前存档、备份和日志，便于排查问题", en: "Export current save, backups, and log for troubleshooting" },
 
   "cloud.selectFirst": { zh: "请先在「世界」里选择一个世界。", en: "Please select a world under Host Swap first." },
   "cloud.versions": { zh: "云端版本 · {0}", en: "Cloud Versions · {0}" },
@@ -165,8 +168,7 @@ const dict: Dict = {
   "settings.upToDate": { zh: "已是最新版本", en: "Up to date" },
   "settings.updateMessage": { zh: "发现新版本，建议立即更新。", en: "A new version is available. Update recommended." },
   "settings.later": { zh: "稍后", en: "Later" },
-  "settings.exportLog": { zh: "导出日志", en: "Export Log" },
-  "toast.logExported": { zh: "日志已导出", en: "Log exported" },
+  "toast.diagExported": { zh: "诊断包已导出", en: "Diagnostic bundle exported" },
 
   "lang.switch": { zh: "English", en: "中文" },
 };

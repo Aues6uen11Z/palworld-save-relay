@@ -324,6 +324,19 @@ export default function AppView() {
                   });
                 } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
               }}
+              onDiag={async () => {
+                if (!selWorld) return;
+                try {
+                  const out = await Dialogs.SaveFile({
+                    Title: t("worlds.exportDiag"),
+                    Filename: `${selWorld.GUID}_diag.zip`,
+                    Filters: [{ DisplayName: t("worlds.exportDiag"), Pattern: "*.zip" }],
+                  });
+                  if (!out) return;
+                  await App.ExportDiagnosticBundle(selWorld!.Path, out);
+                  flash("ok", t("toast.diagExported"));
+                } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
+              }}
               onAlias={(guid, alias) => { App.SetWorldMeta(guid, alias, selWorld?.hidden ?? false).then(() => refreshWorlds()).catch((e: any) => flash("err", parseErr(e, t))); }}
             />
           )}
@@ -446,7 +459,7 @@ function WorldsView(props: {
   selectedSteamId: string;
   onSelectSteamId: (id: string) => void;
   onUpload: () => void; onDownloadActivate: () => void;
-  onExport: () => void; onImport: () => void;
+  onExport: () => void; onImport: () => void; onDiag: () => void;
   onAlias: (guid: string, alias: string) => void;
 }) {
   const { t } = useI18n();
@@ -542,6 +555,12 @@ function WorldsView(props: {
               <button className="btn-ghost" disabled={busy || !sel.IsHost} title={!sel.IsHost ? t("worlds.guestOnly") : ""} onClick={props.onExport}>{t("worlds.btnExport")}</button>
               <button className="btn-ghost" disabled={busy} onClick={props.onImport}>{t("worlds.btnImport")}</button>
             </div>
+          </div>
+
+          <div className="card p-4">
+            <h2 className="font-semibold mb-1">{t("worlds.diagTitle")}</h2>
+            <p className="text-xs text-gray-500 mb-3">{t("worlds.diagDesc")}</p>
+            <button className="btn-ghost" disabled={busy} onClick={props.onDiag}>{t("worlds.exportDiag")}</button>
           </div>
         </>
       )}
@@ -666,18 +685,6 @@ function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate, flash }: { cfg: C
           <button className="btn-ghost" onClick={onCheckUpdate}>
             {t("settings.checkUpdate")}
           </button>
-          <button className="btn-ghost" onClick={async () => {
-            try {
-              const out = await Dialogs.SaveFile({
-                Title: t("settings.exportLog"),
-                Filename: "palrelay-log.txt",
-                Filters: [{ DisplayName: "Text", Pattern: "*.txt" }],
-              });
-              if (!out) return;
-              await App.ExportLog(out);
-              flash("ok", t("toast.logExported"));
-            } catch (e: any) { if (!String(e?.message || e).match(/cancelled by user/i)) flash("err", parseErr(e, t)); }
-          }}>{"📄 " + t("settings.exportLog")}</button>
         </div>
       </div>
     </div>

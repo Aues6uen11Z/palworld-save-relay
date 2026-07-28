@@ -70,3 +70,34 @@ func TestSourceGUIDFromZip_EmptyGUID(t *testing.T) {
 		t.Fatal("expected ok=false when guid is empty")
 	}
 }
+
+func TestSelectDiagnosticBackups(t *testing.T) {
+	mk := func(name string) BackupRecord { return BackupRecord{Name: name} }
+	// ListBackups returns backups newest-first (by name desc).
+	cases := []struct {
+		name      string
+		in        []BackupRecord
+		wantNames []string
+	}{
+		{"empty", nil, nil},
+		{"single", []BackupRecord{mk("2026-01-03_120000_G_host.zip")}, []string{"2026-01-03_120000_G_host.zip"}},
+		{"two", []BackupRecord{mk("2026-01-03_120000_G_host.zip"), mk("2026-01-02_120000_G_host.zip")}, []string{"2026-01-02_120000_G_host.zip", "2026-01-03_120000_G_host.zip"}},
+		{"many", []BackupRecord{
+			mk("2026-01-05_120000_G_host.zip"), mk("2026-01-04_120000_G_host.zip"),
+			mk("2026-01-03_120000_G_host.zip"), mk("2026-01-02_120000_G_host.zip"),
+			mk("2026-01-01_120000_G_host.zip"),
+		}, []string{"2026-01-01_120000_G_host.zip", "2026-01-05_120000_G_host.zip", "2026-01-04_120000_G_host.zip"}},
+	}
+	for _, c := range cases {
+		got := selectDiagnosticBackups(c.in)
+		if len(got) != len(c.wantNames) {
+			t.Errorf("%s: got %d backups, want %d (%v)", c.name, len(got), len(c.wantNames), c.wantNames)
+			continue
+		}
+		for i, b := range got {
+			if b.Name != c.wantNames[i] {
+				t.Errorf("%s: [%d] got %s, want %s", c.name, i, b.Name, c.wantNames[i])
+			}
+		}
+	}
+}
