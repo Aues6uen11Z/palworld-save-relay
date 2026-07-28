@@ -11,6 +11,26 @@ import (
 	"palworld-save-relay/internal/logger"
 )
 
+// isWorldSaveFile reports whether relpath (forward-slash, relative to the
+// world dir) is a legitimate Palworld world save file: a top-level Level.sav,
+// LevelMeta.sav, WorldOption.sav, or LocalData.sav, or a .sav directly under
+// Players/. Everything else - backup/ and world_save_bak/ dirs, stray zip
+// files, nested relay packages, _-prefixed metadata - is excluded so it
+// neither bloats transfers nor pollutes the target world.
+func isWorldSaveFile(relpath string) bool {
+	relpath = filepath.ToSlash(relpath)
+	switch relpath {
+	case "Level.sav", "LevelMeta.sav", "WorldOption.sav", "LocalData.sav":
+		return true
+	}
+	if strings.HasPrefix(relpath, "Players/") {
+		rest := relpath[len("Players/"):]
+		// Flat .sav only (uid.sav / uid_dps.sav); no subfolders.
+		return !strings.Contains(rest, "/") && filepath.Ext(rest) == ".sav"
+	}
+	return false
+}
+
 // PackWorld zips a world save folder (excluding the game's own backup/ subdir)
 // into a byte slice. Used by cloud sync and import/export.
 func PackWorld(worldDir string) ([]byte, error) {
@@ -37,7 +57,13 @@ func PackWorld(worldDir string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		w, err := zw.Create(filepath.ToSlash(rel))
+		// Whitelist: pack only world save files + relay metadata (_-prefixed).
+		// Strays (world_save_bak/, nested zips, etc.) never enter a transfer.
+		rel = filepath.ToSlash(rel)
+		if !isWorldSaveFile(rel) && !strings.HasPrefix(rel, "_") {
+			return nil
+		}
+		w, err := zw.Create(rel)
 		if err != nil {
 			return err
 		}
@@ -84,8 +110,11 @@ func UnpackWorld(zipBytes []byte, destDir string) error {
 	}
 	count := 0
 	for _, f := range zr.File {
-		if strings.HasPrefix(filepath.ToSlash(f.Name), "_") {
-			continue // skip metadata files (relay log, etc.)
+		name := filepath.ToSlash(f.Name)
+		// Whitelist: unpack only world save files. Relay metadata (_-prefixed)
+		// and strays (world_save_bak/, nested zips) are skipped.
+		if !isWorldSaveFile(name) {
+			continue
 		}
 		outPath := filepath.Join(destDir, filepath.FromSlash(f.Name))
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
