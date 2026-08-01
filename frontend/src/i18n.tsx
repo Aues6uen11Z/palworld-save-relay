@@ -67,7 +67,7 @@ const dict: Dict = {
   "toast.activated": { zh: "已切换为房主", en: "Switched to host" },
 
   "label.upload": { zh: "上传存档", en: "Upload Save" },
-  "label.downloadActivate": { zh: "下载并成为房主", en: "Download & Become Host" },
+  "label.downloadActivate": { zh: "下载存档", en: "Download Save" },
 
   "dialog.exportTitle": { zh: "导出存档", en: "Export Save" },
   "dialog.importTitle": { zh: "导入存档", en: "Import Save" },
@@ -78,7 +78,7 @@ const dict: Dict = {
     en: "After uploading, your local save will switch from Host to Guest — only personal progress is kept, and you cannot continue playing.\n\nThe latest save will be stored in the cloud for others to download. You can restore from the Backups page at any time.\n\nAre you sure you want to upload?",
   },
   "dialog.confirmUpload": { zh: "确认上传", en: "Confirm Upload" },
-  "dialog.downloadTitle": { zh: "下载并成为房主", en: "Download & Become Host" },
+  "dialog.downloadTitle": { zh: "下载存档", en: "Download Save" },
   "dialog.downloadConfirm": {
     zh: "将下载云端存档并切换为房主。\n\n当前本地存档会先自动备份（可在「备份」页回滚）。下载完成后，你可以启动游戏。\n\n确定要继续吗？",
     en: "This will download the cloud save and switch you to host.\n\nYour current local save will be backed up first (restore from Backups page). After download, you can launch the game.\n\nAre you sure you want to continue?",
@@ -118,15 +118,15 @@ const dict: Dict = {
   "worlds.unnamed": { zh: "(未命名)", en: "(unnamed)" },
   "worlds.host": { zh: "房主", en: "Host" },
   "worlds.guest": { zh: "客机", en: "Guest" },
-  "worlds.guestHint": { zh: "你当前不是此世界的房主。点击下方「下载并成为房主」即可接手。", en: "You are not the host of this world. Click Download & Become Host below to take over." },
-  "worlds.guestOnly": { zh: "非房主不可用：先点「下载并成为房主」接手", en: "Guest-only: click Download & Become Host first" },
+  "worlds.guestHint": { zh: "你当前不是此世界的房主。点击下方「下载存档」即可接手。", en: "You are not the host of this world. Click Download Save below to take over." },
+  "worlds.guestOnly": { zh: "非房主不可用：先点「下载存档」接手", en: "Guest-only: click Download Save first" },
   "worlds.swapHost": { zh: "云端换房主", en: "Cloud Host Swap" },
   "worlds.swapHostDesc": {
-    zh: "通过云端传输存档。当前房主上传后本机转为客机；接手方下载后自动成为新房主。",
-    en: "Transfer the save via cloud. The current host uploads and the local save becomes guest-only; the recipient downloads and automatically becomes the new host.",
+    zh: "通过云端传输存档。当前房主上传存档，接手方下载后自动成为新房主。",
+    en: "Transfer the save via cloud. The current host uploads the save; the recipient downloads it and automatically becomes the new host.",
   },
   "worlds.btnUpload": { zh: "⬆ 上传存档", en: "⬆ Upload Save" },
-  "worlds.btnDownloadActivate": { zh: "🎯 下载并成为房主", en: "🎯 Download & Become Host" },
+  "worlds.btnDownloadActivate": { zh: "📥 下载存档", en: "📥 Download Save" },
   "worlds.manualTransfer": { zh: "手动换房主", en: "Manual Host Swap" },
   "worlds.manualDesc": {
     zh: "通过文件传输存档。当前房主导出存档文件发给对方；对方导入后自动成为新房主。",
