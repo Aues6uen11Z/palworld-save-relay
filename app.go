@@ -550,7 +550,7 @@ func (a *App) ActivateHost(worldPath string) error {
 	sid, err := steamIDFromPath(worldPath)
 	if err != nil {
 		logger.Errorf("[%s] ActivateHost: world=%s steamid parse failed: %v", op, guid, err)
-		return err
+		return apperr.Wrap(apperr.SteamIDParse, err)
 	}
 	fromUID := palworld.SteamIDToPlayerUUID(sid)
 	logger.Infof("[%s] ActivateHost: start world=%s steamid=%d uid=%s -> host", op, guid, sid, fromUID)
@@ -616,7 +616,7 @@ func (a *App) packForTransfer(worldPath string) ([]byte, error) {
 
 	sid, err := steamIDFromPath(worldPath)
 	if err != nil {
-		return nil, err
+		return nil, apperr.Wrap(apperr.SteamIDParse, err)
 	}
 
 	realUID := palworld.SteamIDToPlayerUUID(sid)
@@ -626,7 +626,7 @@ func (a *App) packForTransfer(worldPath string) ([]byte, error) {
 	data, err := palworld.PackIntermediate(worldPath, realUID, nil)
 	if err != nil {
 		logger.Errorf("[%s] packForTransfer: world=%s pack intermediate failed: %v", op, guid, err)
-		return nil, apperr.Wrap(apperr.PackFailed, err)
+		return nil, apperr.WrapOrPreserve(apperr.PackFailed, err)
 	}
 
 	// Build relay history entry and embed in the zip.
@@ -658,7 +658,7 @@ func (a *App) packForTransfer(worldPath string) ([]byte, error) {
 	})
 	if err != nil {
 		logger.Errorf("[%s] packForTransfer: world=%s re-pack with relay log failed: %v", op, guid, err)
-		return nil, apperr.Wrap(apperr.PackFailed, err)
+		return nil, apperr.WrapOrPreserve(apperr.PackFailed, err)
 	}
 
 	logger.Infof("[%s] packForTransfer: world=%s done (%d bytes)", op, guid, len(data))

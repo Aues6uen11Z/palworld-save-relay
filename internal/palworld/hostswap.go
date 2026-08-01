@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"palworld-save-relay/internal/apperr"
 	"palworld-save-relay/internal/logger"
 
 	"palworld-save-relay/internal/sav"
@@ -31,16 +32,16 @@ func uidFilename(u sav.UUID) string {
 func assertUploadReady(worldDir string, realUID sav.UUID) error {
 	levelPath := filepath.Join(worldDir, "Level.sav")
 	if _, err := os.Stat(levelPath); err != nil {
-		return fmt.Errorf("not a host world (Level.sav missing); download the latest cloud save and activate as host first")
+		return apperr.New(apperr.NotHostWorld, "")
 	}
 	playersDir := filepath.Join(worldDir, "Players")
 	hostFile := filepath.Join(playersDir, uidFilename(HostUUID))
 	if _, err := os.Stat(hostFile); err != nil {
-		return fmt.Errorf("not the host (host player save %s missing); activate as host first", filepath.Base(hostFile))
+		return apperr.New(apperr.NotHost, "")
 	}
 	realFile := filepath.Join(playersDir, uidFilename(realUID))
 	if _, err := os.Stat(realFile); err == nil {
-		return fmt.Errorf("duplicate player data: both the host save and your guest save exist. This happens when you play without activating after downloading. Please restore from a backup, then activate as host before uploading")
+		return apperr.New(apperr.DuplicatePlayerData, "")
 	}
 	return nil
 }
