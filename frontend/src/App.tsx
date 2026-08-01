@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import mermaid from "mermaid";
 import { Browser, Dialogs, Window } from "@wailsio/runtime";
 import { App } from "../bindings/palworld-save-relay";
 import type { World, BackupRecord } from "../bindings/palworld-save-relay/models";
@@ -7,7 +8,7 @@ import type { SteamAccount } from "../bindings/palworld-save-relay/internal/palw
 import type { Config } from "../bindings/palworld-save-relay/internal/config/models";
 import { parseErr, useI18n, type Lang } from "./i18n";
 
-type View = "worlds" | "cloud" | "backups" | "settings";
+type View = "worlds" | "cloud" | "backups" | "settings" | "help";
 
 function defaultConfig(): Config {
   return {
@@ -342,6 +343,7 @@ export default function AppView() {
           )}
           {view === "cloud" && <CloudView world={selWorld} busy={busy} onDownloadActivate={(k) => handleDownloadActivate(k)} />}
           {view === "backups" && <BackupsView world={selWorld} busy={busy} flash={flash} onRestore={(name) => { if (selWorld) run(t("backups.restore"), () => App.RestoreBackup(selWorld.Path, name), t("toast.rolledBack")); }} />}
+          {view === "help" && <HelpView lang={lang} />}
           {view === "settings" && (
             <SettingsView cfg={cfg} autoRoot={saveRoot} onSaved={(c) => { setCfg(c); flash("ok", t("toast.configSaved")); refreshWorlds(); }} onCheckUpdate={() => checkUpdate(false)} flash={flash} />
           )}
@@ -411,6 +413,7 @@ function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) 
     ["cloud", t("nav.cloud")],
     ["backups", t("nav.backups")],
     ["settings", t("nav.settings")],
+    ["help", t("nav.help")],
   ];
   return (
     <aside className="w-52 bg-gray-900 text-gray-300 flex flex-col">
@@ -686,6 +689,115 @@ function SettingsView({ cfg, autoRoot, onSaved, onCheckUpdate, flash }: { cfg: C
             {t("settings.checkUpdate")}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "base",
+  themeVariables: {
+    fontFamily: "system-ui, sans-serif",
+    fontSize: "14px",
+    primaryColor: "#dbeafe",
+    primaryTextColor: "#1e3a5f",
+    primaryBorderColor: "#3b82f6",
+    lineColor: "#6b7280",
+    secondaryColor: "#f3f4f6",
+    tertiaryColor: "#fafafa",
+  },
+  flowchart: { curve: "basis", padding: 20, nodeSpacing: 40, rankSpacing: 50 },
+});
+
+function MermaidDiagram({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState("");
+  useEffect(() => {
+    const id = "m" + Math.random().toString(36).slice(2, 9);
+    mermaid.render(id, chart).then(({ svg }) => setSvg(svg)).catch(() => setSvg(""));
+  }, [chart]);
+  return <div className="flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
+function HelpView({ lang }: { lang: Lang }) {
+  const { t } = useI18n();
+  const flowChart = lang === "zh"
+    ? `flowchart LR
+    A["🔧 房主A<br/>导出/上传<br/>本地转客机"] --> B["📦 _relay.zip<br/>中转包<br/>不含LocalData"]
+    B --> C["📥 房主B<br/>导入/下载<br/>自动成为新房主"]
+    style A fill:#dbeafe,stroke:#3b82f6
+    style B fill:#fef3c7,stroke:#f59e0b
+    style C fill:#d1fae5,stroke:#10b981`
+    : `flowchart LR
+    A["🔧 Host A<br/>Export/Upload<br/>Becomes guest"] --> B["📦 _relay.zip<br/>Intermediate<br/>No LocalData"]
+    B --> C["📥 Host B<br/>Import/Download<br/>Auto-becomes new host"]
+    style A fill:#dbeafe,stroke:#3b82f6
+    style B fill:#fef3c7,stroke:#f59e0b
+    style C fill:#d1fae5,stroke:#10b981`;
+
+  const uidChart = lang === "zh"
+    ? `flowchart LR
+    subgraph AWorld ["A 的世界"]
+        A1["0001 = A<br/>房主"]
+        A2["B 客机"]
+    end
+    subgraph Relay ["中转包"]
+        R1["A = A<br/>原房主"]
+        R2["B 客机"]
+    end
+    subgraph BWorld ["B 导入后"]
+        B1["0001 = B<br/>新房主"]
+        B2["A 客机"]
+    end
+    A1 -->|"导出"| R1
+    R2 -->|"导入"| B1
+    style A1 fill:#dbeafe,stroke:#3b82f6
+    style R1 fill:#fef3c7,stroke:#f59e0b
+    style B1 fill:#d1fae5,stroke:#10b981`
+    : `flowchart LR
+    subgraph AWorld ["A's World"]
+        A1["0001 = A<br/>Host"]
+        A2["B Guest"]
+    end
+    subgraph Relay ["Intermediate"]
+        R1["A = A<br/>Former host"]
+        R2["B Guest"]
+    end
+    subgraph BWorld ["B After Import"]
+        B1["0001 = B<br/>New host"]
+        B2["A Guest"]
+    end
+    A1 -->|"Export"| R1
+    R2 -->|"Import"| B1
+    style A1 fill:#dbeafe,stroke:#3b82f6
+    style R1 fill:#fef3c7,stroke:#f59e0b
+    style B1 fill:#d1fae5,stroke:#10b981`;
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">{t("help.title")}</h1>
+
+      <div className="card p-6">
+        <h2 className="font-semibold mb-3">{t("help.flowTitle")}</h2>
+        <MermaidDiagram chart={flowChart} />
+        <p className="text-sm text-gray-600 mt-4 leading-relaxed">{t("help.flowDesc")}</p>
+      </div>
+
+      <div className="card p-6">
+        <h2 className="font-semibold mb-3">{t("help.uidTitle")}</h2>
+        <MermaidDiagram chart={uidChart} />
+        <p className="text-sm text-gray-600 mt-4 leading-relaxed">{t("help.uidDesc")}</p>
+      </div>
+
+      <div className="card p-6">
+        <h2 className="font-semibold mb-3">{t("help.conceptsTitle")}</h2>
+        <ul className="space-y-2 text-sm text-gray-600">
+          <li><strong>{t("help.c1Title")}</strong>{t("help.c1Desc")}</li>
+          <li><strong>{t("help.c2Title")}</strong>{t("help.c2Desc")}</li>
+          <li><strong>{t("help.c3Title")}</strong>{t("help.c3Desc")}</li>
+          <li><strong>{t("help.c4Title")}</strong>{t("help.c4Desc")}</li>
+        </ul>
       </div>
     </div>
   );

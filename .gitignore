@@ -28,3 +28,8 @@ cmd/
 debug/
 .gitee_token
 release-note.txt
+
+# agent-reach / skills
+.agents/
+config/
+skills-lock.json
