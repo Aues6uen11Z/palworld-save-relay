@@ -12,12 +12,13 @@ const dict: Dict = {
   "nav.cloud": { zh: "云同步", en: "Cloud Sync" },
   "nav.backups": { zh: "备份", en: "Backups" },
   "nav.settings": { zh: "设置", en: "Settings" },
-  "nav.help": { zh: "原理", en: "How It Works" },
+  "nav.help": { zh: "说明", en: "How It Works" },
 
   "title.worlds": { zh: "换房主", en: "Host Swap" },
   "title.cloud": { zh: "云同步", en: "Cloud Sync" },
   "title.backups": { zh: "备份管理", en: "Backup Manager" },
   "title.settings": { zh: "设置", en: "Settings" },
+  "title.help": { zh: "说明", en: "How It Works" },
 
   "win.min": { zh: "最小化", en: "Minimize" },
   "win.max": { zh: "最大化", en: "Maximize" },

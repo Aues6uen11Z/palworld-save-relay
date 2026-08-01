@@ -257,7 +257,7 @@ export default function AppView() {
   };
 
   const titleFor = (v: View) =>
-    ({ worlds: t("title.worlds"), cloud: t("title.cloud"), backups: t("title.backups"), settings: t("title.settings") }[v]);
+    ({ worlds: t("title.worlds"), cloud: t("title.cloud"), backups: t("title.backups"), settings: t("title.settings"), help: t("title.help") }[v]);
 
   return (
     <div className="flex h-full">
@@ -269,7 +269,7 @@ export default function AppView() {
         >
           <div>
             <h1 className="text-lg font-semibold">{titleFor(view)}</h1>
-            {selWorld && view !== "settings" && (
+            {selWorld && view !== "settings" && view !== "help" && (
               <p className="text-xs text-gray-500">{selWorld.alias || selWorld.WorldName || selWorld.GUID}</p>
             )}
           </div>
@@ -776,7 +776,6 @@ function HelpView({ lang }: { lang: Lang }) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">{t("help.title")}</h1>
 
       <div className="card p-6">
         <h2 className="font-semibold mb-3">{t("help.flowTitle")}</h2>
