@@ -1,3 +1,5 @@
+
+
 # 幻兽帕鲁换房主
 
 **中文** | [English](README.en.md)
@@ -64,6 +66,7 @@ internal/
   sav/        存档引擎（移植自 cheahjs/palworld-save-tools）
   palworld/   域逻辑：检测、换房主、SteamID->UID、备份、打包、坏档修复
   storage/    云存储抽象 + 七牛实现
+  updater/    自动更新逻辑（下载 + bat 替换重启）
   config/     应用配置
   logger/     进程级文件日志
 frontend/     React UI（双语 i18n）
