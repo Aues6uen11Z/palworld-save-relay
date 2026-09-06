@@ -35,6 +35,9 @@ type Player struct {
 	NickName   string
 	Level      int
 	IsHost     bool
+	// IsGuildLeader is true when this player's UID is the admin (leader) of the
+	// guild the world's host belongs to. Only meaningful for a host world.
+	IsGuildLeader bool
 }
 
 // SaveRoot returns the Palworld save root (LocalAppData/Pal/Saved/SaveGames).
@@ -226,9 +229,11 @@ func ListPlayers(worldDir string) ([]Player, error) {
 	if err != nil {
 		return nil, err
 	}
+	hints, custom := sav.PalWorldConfig()
 
 	// Resolve host's real UID: worldDir is SteamID/WorldGUID,
 	// so filepath.Dir(worldDir) is the SteamID folder.
+	var hostReal *sav.UUID
 	for i := range players {
 		if !players[i].IsHost {
 			continue
@@ -238,10 +243,60 @@ func ListPlayers(worldDir string) ([]Player, error) {
 		if _, err := fmt.Sscanf(steamIDFolder, "%d", &sid); err == nil && sid > 0 {
 			uid := SteamIDToPlayerUUID(sid)
 			players[i].UID = sav.UUID(uid).String()
+			u := sav.UUID(uid)
+			hostReal = &u
 		}
 		break
 	}
+
+	// Flag the guild leader within the host's guild, so the UI can mark it.
+	if gf, err := sav.ReadGvasFile(gvas, hints, custom); err == nil {
+		markGuildLeader(gf, players, hostReal)
+	}
 	return players, nil
+}
+
+// markGuildLeader sets IsGuildLeader on the player who holds the admin (leader)
+// role of the guild the host belongs to. hostReal is the host's resolved real
+// UID (nil if the SteamID could not be derived); the host is matched in the
+// guild by either the host sentinel (0001) or hostReal.
+func markGuildLeader(gf *sav.GvasFile, players []Player, hostReal *sav.UUID) {
+	g := findHostGuild(gf, hostReal)
+	if g == nil {
+		return
+	}
+	admin, _ := g["admin_player_uid"].(*sav.UUID)
+	if admin == nil {
+		return
+	}
+	leader := admin.String()
+	if admin.Equal(&HostUUID) && hostReal != nil {
+		// Leader is the host sentinel; the UI shows the host under its real UID.
+		leader = hostReal.String()
+	}
+	for i := range players {
+		if players[i].UID == leader {
+			players[i].IsGuildLeader = true
+		}
+	}
+}
+
+// findHostGuild returns the first EPalGroupType::Guild whose members include the
+// host sentinel (0001) or hostReal, or nil if the host is not in any guild.
+func findHostGuild(gf *sav.GvasFile, hostReal *sav.UUID) map[string]any {
+	for _, g := range findAllGuilds(gf) {
+		players, _ := g["players"].([]map[string]any)
+		for _, p := range players {
+			pu, _ := p["player_uid"].(*sav.UUID)
+			if pu == nil {
+				continue
+			}
+			if pu.Equal(&HostUUID) || (hostReal != nil && pu.Equal(hostReal)) {
+				return g
+			}
+		}
+	}
+	return nil
 }
 
 // PalCount returns the total number of character entries (pals + players) in

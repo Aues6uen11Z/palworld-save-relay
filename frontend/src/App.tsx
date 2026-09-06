@@ -219,6 +219,23 @@ export default function AppView() {
     });
   };
 
+  const handleBecomeLeader = () => {
+    if (!selWorld) return;
+    const cur = players.find((p) => p.IsGuildLeader);
+    setModal({
+      title: t("dialog.leaderTitle"),
+      message: t("dialog.leaderConfirm", cur?.NickName || t("worlds.unnamed")),
+      buttons: [
+        { label: t("dialog.cancel"), variant: "ghost" },
+        { label: t("dialog.confirmLeader"), variant: "primary" },
+      ],
+      onButton: (i) => {
+        setModal(null);
+        if (i === 1) run(t("worlds.btnBecomeLeader"), () => App.BecomeGuildLeader(selWorld!.Path), t("toast.leaderDone"));
+      },
+    });
+  };
+
   const handleDownloadActivate = (key?: string) => {
     if (!selWorld) return;
     let msg = t("dialog.downloadConfirm");
@@ -297,6 +314,7 @@ export default function AppView() {
                 refreshWorlds();
               }}
               onUpload={() => handleUpload()}
+              onBecomeLeader={() => handleBecomeLeader()}
               onDownloadActivate={() => handleDownloadActivate()}
               onExport={async () => {
                 if (!selWorld) return;
@@ -462,6 +480,7 @@ function WorldsView(props: {
   selectedSteamId: string;
   onSelectSteamId: (id: string) => void;
   onUpload: () => void; onDownloadActivate: () => void;
+  onBecomeLeader: () => void;
   onExport: () => void; onImport: () => void; onDiag: () => void;
   onAlias: (guid: string, alias: string) => void;
 }) {
@@ -534,7 +553,19 @@ function WorldsView(props: {
                 players.map((p) => (
                   <div key={p.InstanceID} className="flex items-center justify-between text-sm py-1">
                     <span>{p.NickName || t("worlds.unnamed")} <span className="text-gray-400">Lv.{p.Level}</span> <span className="text-gray-300 font-mono text-xs">{p.UID}</span></span>
-                    {p.IsHost ? <span className="pill bg-indigo-100 text-indigo-700">{t("worlds.host")}</span> : null}
+                    <span className="flex items-center gap-2">
+                      {p.IsGuildLeader ? <span className="pill bg-amber-100 text-amber-700">{t("worlds.leader")}</span> : null}
+                      {p.IsHost ? <span className="pill bg-indigo-100 text-indigo-700">{t("worlds.host")}</span> : null}
+                      {p.IsHost && !p.IsGuildLeader && (
+                        <button
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={busy}
+                          onClick={props.onBecomeLeader}
+                        >
+                          {t("worlds.btnBecomeLeader")}
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))
               )}

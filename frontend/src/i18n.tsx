@@ -60,12 +60,15 @@ const dict: Dict = {
   "errcode.RESTORE_FATAL": { zh: "回滚失败且自动恢复也失败，请联系支持并保留备份文件", en: "Restore failed and auto-recovery also failed. Please contact support and keep backup files." },
   "errcode.FILE_WRITE": { zh: "写入文件失败，请检查磁盘空间和路径权限", en: "Failed to write file. Check disk space and path permissions." },
   "errcode.FILE_READ": { zh: "读取文件失败，请确认文件存在且未损坏", en: "Failed to read file. Confirm the file exists and is not corrupted." },
+  "errcode.NOT_IN_GUILD": { zh: "你不在任何公会，无法成为会长", en: "You are not in any guild, so you cannot become the leader." },
+  "errcode.ALREADY_LEADER": { zh: "你已是这一公会的会长", en: "You are already the leader of this guild." },
 
   "toast.configSaved": { zh: "配置已保存", en: "Config saved" },
   "toast.versionDownloaded": { zh: "已下载该版本", en: "Version downloaded" },
   "toast.rolledBack": { zh: "已回滚", en: "Rolled back" },
   "toast.uploaded": { zh: "存档已上传", en: "Save uploaded" },
   "toast.activated": { zh: "已切换为房主", en: "Switched to host" },
+  "toast.leaderDone": { zh: "你已成为公会会长", en: "You are now the guild leader" },
 
   "label.upload": { zh: "上传存档", en: "Upload Save" },
   "label.downloadActivate": { zh: "下载存档", en: "Download Save" },
@@ -96,6 +99,12 @@ const dict: Dict = {
     en: "Save downloaded and you are now the host!\n\nYou can now launch Palworld.",
   },
   "dialog.gotIt": { zh: "知道了", en: "Got It" },
+  "dialog.leaderTitle": { zh: "成为公会会长", en: "Become Guild Leader" },
+  "dialog.leaderConfirm": {
+    zh: "把公会会长改为你，「{0}」将成为普通成员。操作前自动备份。\n\n确定？",
+    en: "Make you the guild leader; \"{0}\" becomes a regular member. Backed up first.\n\nConfirm?",
+  },
+  "dialog.confirmLeader": { zh: "确认成为会长", en: "Confirm" },
 
   "warn.noCloud": {
     zh: "还没配置云服务。可到「设置」配置云同步；或直接用下方的「导出 / 导入存档」手动传输。",
@@ -118,6 +127,8 @@ const dict: Dict = {
   "worlds.noPlayers": { zh: "无玩家数据", en: "No player data" },
   "worlds.unnamed": { zh: "(未命名)", en: "(unnamed)" },
   "worlds.host": { zh: "房主", en: "Host" },
+  "worlds.leader": { zh: "会长", en: "Leader" },
+  "worlds.btnBecomeLeader": { zh: "成为会长", en: "Become Leader" },
   "worlds.guest": { zh: "客机", en: "Guest" },
   "worlds.guestHint": { zh: "你当前不是此世界的房主。点击下方「下载存档」即可接手。", en: "You are not the host of this world. Click Download Save below to take over." },
   "worlds.guestOnly": { zh: "非房主不可用：先点「下载存档」接手", en: "Guest-only: click Download Save first" },

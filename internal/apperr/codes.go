@@ -36,6 +36,8 @@ const (
 	RestoreFatal    Code = "RESTORE_FATAL"
 	FileWrite       Code = "FILE_WRITE"
 	FileRead        Code = "FILE_READ"
+	NotInGuild      Code = "NOT_IN_GUILD"
+	AlreadyLeader   Code = "ALREADY_LEADER"
 )
 
 // CodedError wraps an underlying error with a Code. Error() returns "[CODE] detail"

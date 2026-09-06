@@ -1123,5 +1123,16 @@ func (a *App) ImportWorld(zipPath, worldPath string) error {
 	return nil
 }
 
+// BecomeGuildLeader makes the current host the leader of the guild they belong
+// to. It modifies the level save (admin_player_uid + leader flag), backing up
+// first and rolling back on failure. Requires the game to be closed.
+func (a *App) BecomeGuildLeader(worldPath string) error {
+	if err := palworld.BecomeGuildLeader(worldPath); err != nil {
+		logger.Errorf("BecomeGuildLeader: world=%s err=%v", filepath.Base(worldPath), err)
+		return err
+	}
+	logger.Infof("BecomeGuildLeader: world=%s done", filepath.Base(worldPath))
+	return nil
+}
 
 
